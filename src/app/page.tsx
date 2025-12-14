@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Mic, MicOff, Play, Pause, Download, Share2, Sparkles, MessageCircle } from 'lucide-react'
+import { Mic, MicOff, Upload, Play, Pause, Download, Share2, Sparkles, Headphones, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+interface Recording {
+  id: string
+  blob?: Blob
+  audioUrl?: string
+  duration: number
+  timestamp: Date
+}
 
 interface Message {
   id: string
@@ -12,50 +20,62 @@ interface Message {
   timestamp: Date
 }
 
-interface RecordingStep {
-  step: number
+interface Step {
+  id: number
   title: string
+  status: 'pending' | 'recording' | 'completed'
   prompt: string
-  isCompleted: boolean
 }
 
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [recordings, setRecordings] = useState<Recording[]>([])
   const [messages, setMessages] = useState<Message[]>([])
   const [currentStep, setCurrentStep] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [podcastUrl, setPodcastUrl] = useState<string | null>(null)
   const [podcastScript, setPodcastScript] = useState<string | null>(null)
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const steps: RecordingStep[] = [
+  const getStepStatus = (stepId: number): 'pending' | 'recording' | 'completed' => {
+    if (stepId < currentStep) return 'completed'
+    if (stepId === currentStep) return 'recording'
+    return 'pending'
+  }
+
+  const steps: Step[] = [
     {
-      step: 1,
+      id: 1,
       title: "回忆瞬间",
-      prompt: "我们不需要一个完整故事。就说最近一次，你突然觉得'有点不对劲'的时候。你想到的第一个画面是什么？",
-      isCompleted: currentStep > 0
+      status: getStepStatus(1),
+      prompt: "我们不需要一个完整故事。就说最近一次，你突然觉得'有点不对劲'的时候。你想到的第一个画面是什么？"
     },
     {
-      step: 2,
+      id: 2,
       title: "重建现场",
-      prompt: "你能带我回到那个瞬间吗？当时具体发生了什么？",
-      isCompleted: currentStep > 1
+      status: getStepStatus(2),
+      prompt: "你能带我回到那个瞬间吗？当时具体发生了什么？"
     },
     {
-      step: 3,
+      id: 3,
       title: "自我认知",
-      prompt: "如果现在回头看那一刻，你会怎么形容当时的自己？",
-      isCompleted: currentStep > 2
+      status: getStepStatus(3),
+      prompt: "如果现在回头看那一刻，你会怎么形容当时的自己？"
     }
   ]
 
   useEffect(() => {
-    // 显示欢迎消息和第一步引导
+    // 初始化欢迎消息
     setMessages([{
       id: '1',
       role: 'assistant',
-      content: '你好，我是你的AI语音播客编导。我们将通过三段对话，把你的故事变成一期精彩的播客。',
+      content: '你好，我是你的AI语音播客编导。我们将通过3段对话，把你的故事变成一期精彩的播客。',
       timestamp: new Date()
     }, {
       id: '2',
@@ -67,24 +87,44 @@ export default function Home() {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100
+        }
+      })
+
+      const options = { mimeType: 'audio/webm;codecs=opus' }
+      const mediaRecorder = new MediaRecorder(stream, options)
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
 
       mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data)
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
       }
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         const audioUrl = URL.createObjectURL(audioBlob)
+
+        const newRecording: Recording = {
+          id: Date.now().toString(),
+          blob: audioBlob,
+          audioUrl,
+          duration: recordingTime,
+          timestamp: new Date()
+        }
+
+        setRecordings(prev => [...prev, newRecording])
 
         // 添加用户消息
         const userMessage: Message = {
           id: Date.now().toString(),
           role: 'user',
-          content: '[转录中...]',
+          content: `录音完成 (${formatTime(recordingTime)})`,
           audioUrl,
           timestamp: new Date()
         }
@@ -105,35 +145,96 @@ export default function Home() {
           ))
 
           // 准备AI响应
-          setTimeout(() => {
-            handleAIResponse()
-          }, 1500)
+          if (currentStep < 2) {
+            const aiMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: 'assistant',
+              content: steps[currentStep + 1].prompt,
+              timestamp: new Date()
+            }
+            setTimeout(() => {
+              setMessages(prev => [...prev, aiMessage])
+              setCurrentStep(prev => prev + 1)
+            }, 1000)
+          } else {
+            // 完成三步，生成播客
+            setTimeout(() => {
+              generatePodcast()
+            }, 1000)
+          }
         }, 1000)
 
         // 清理
         stream.getTracks().forEach(track => track.stop())
       }
 
-      mediaRecorder.start()
+      mediaRecorder.start(100)
       setIsRecording(true)
+
+      // 开始计时
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1)
+      }, 1000)
+
     } catch (err) {
-      console.error('Error accessing microphone:', err)
+      console.error('无法访问麦克风:', err)
+      alert('请允许访问麦克风以使用录音功能')
     }
   }
 
-  const handleAIResponse = () => {
-    if (currentStep < 2) {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: steps[currentStep + 1].prompt,
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+      setRecordingTime(0)
+
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current)
+      }
+    }
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('audio/')) {
+      setIsUploading(true)
+      const audioUrl = URL.createObjectURL(file)
+
+      const newRecording: Recording = {
+        id: Date.now().toString(),
+        audioUrl,
+        duration: 0, // 实际应用中应该解析音频文件获取时长
         timestamp: new Date()
       }
-      setMessages(prev => [...prev, aiMessage])
-      setCurrentStep(prev => prev + 1)
-    } else {
-      // 完成三步，生成播客
-      generatePodcast()
+
+      setRecordings(prev => [...prev, newRecording])
+
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: `上传了音频文件: ${file.name}`,
+        audioUrl,
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, userMessage])
+
+      setIsUploading(false)
+
+      // 上传后的AI响应
+      setTimeout(() => {
+        if (currentStep < 2) {
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: steps[currentStep + 1].prompt,
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, aiMessage])
+          setCurrentStep(prev => prev + 1)
+        } else {
+          generatePodcast()
+        }
+      }, 1000)
     }
   }
 
@@ -180,57 +281,57 @@ export default function Home() {
     }, 3000)
   }
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      setIsRecording(false)
-    }
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   return (
     <div className="min-h-screen bg-white">
-      {/* 主容器 */}
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* 头部 */}
-        <header className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <MessageCircle className="w-10 h-10 text-slate-500" />
-            <h1 className="text-4xl font-bold text-slate-800">
-              Podcast V2
-            </h1>
+      {/* Header */}
+      <header className="border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-center gap-3">
+            <Headphones className="w-8 h-8 text-slate-600" />
+            <h1 className="text-3xl font-light text-slate-900">声记</h1>
           </div>
-          <p className="text-lg text-slate-600">AI语音播客，用银灰色对话记录你的故事</p>
-        </header>
+          <p className="text-center text-slate-500 mt-2">AI语音播客编导</p>
+        </div>
+      </header>
 
-        {/* 步骤指示器 */}
-        <div className="flex justify-center mb-12">
-          <div className="flex items-center gap-2 bg-slate-100 rounded-full p-1">
-            {steps.map((step, index) => (
-              <div key={step.step} className="flex items-center">
+      {/* Main Content */}
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Steps Progress */}
+        <div className="flex justify-center mb-8">
+          <div className="flex items-center gap-2 bg-slate-50 rounded-full p-1">
+            {steps.map((step) => (
+              <div key={step.id} className="flex items-center gap-2">
                 <div
                   className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm transition-all",
-                    step.isCompleted
-                      ? "bg-slate-700 text-white"
-                      : currentStep === index
-                      ? "bg-slate-500 text-white"
-                      : "bg-slate-200 text-slate-500"
+                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all",
+                    step.status === 'completed' && "bg-slate-800 text-white",
+                    step.status === 'recording' && "bg-blue-500 text-white animate-pulse",
+                    step.status === 'pending' && "bg-slate-200 text-slate-500"
                   )}
                 >
-                  {step.isCompleted ? '✓' : step.step}
+                  {step.status === 'completed' ? '✓' : step.id}
                 </div>
                 <span className={cn(
-                  "ml-2 mr-3 text-sm font-medium hidden sm:block",
-                  step.isCompleted ? "text-slate-800" : currentStep === index ? "text-slate-700" : "text-slate-400"
+                  "text-sm",
+                  step.status === 'completed' && "text-slate-800 font-medium",
+                  step.status === 'recording' && "text-blue-600 font-medium",
+                  step.status === 'pending' && "text-slate-500"
                 )}>
                   {step.title}
                 </span>
+                {step.id < 3 && <div className="w-8 h-px bg-slate-300"></div>}
               </div>
             ))}
           </div>
         </div>
 
-        {/* 消息列表 */}
+        {/* Chat Area */}
         <div className="bg-slate-50 rounded-2xl p-6 mb-8 h-96 overflow-y-auto">
           <div className="space-y-4">
             {messages.map((message) => (
@@ -242,28 +343,28 @@ export default function Home() {
                 )}
               >
                 {message.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-slate-300 flex items-center justify-center flex-shrink-0">
-                    <Sparkles className="w-4 h-4 text-slate-600" />
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center flex-shrink-0">
+                    <Sparkles className="w-4 h-4 text-white" />
                   </div>
                 )}
                 <div
                   className={cn(
                     "max-w-md rounded-2xl px-4 py-3",
                     message.role === 'user'
-                      ? "bg-slate-700 text-white"
-                      : "bg-white text-slate-800 border border-slate-200"
+                      ? "bg-slate-800 text-white"
+                      : "bg-white border border-slate-200 text-slate-700"
                   )}
                 >
                   {message.audioUrl && (
-                    <audio controls className="w-full mb-2 h-8" src={message.audioUrl}>
+                    <audio controls className="w-full mb-2" src={message.audioUrl}>
                       您的浏览器不支持音频播放
                     </audio>
                   )}
                   <p className="text-sm">{message.content}</p>
                 </div>
                 {message.role === 'user' && (
-                  <div className="w-8 h-8 rounded-full bg-slate-400 flex items-center justify-center flex-shrink-0">
-                    <MessageCircle className="w-4 h-4 text-white" />
+                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
+                    <Mic className="w-4 h-4 text-white" />
                   </div>
                 )}
               </div>
@@ -271,7 +372,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 播客播放器 */}
+        {/* Podcast Player */}
         {podcastUrl && (
           <div className="bg-slate-50 rounded-2xl p-6 mb-8 border border-slate-200">
             <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
@@ -300,36 +401,79 @@ export default function Home() {
           </div>
         )}
 
-        {/* 录音控制 */}
-        <div className="flex justify-center">
-          {!podcastUrl && (
-            <button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onTouchStart={startRecording}
-              onTouchEnd={stopRecording}
-              disabled={isProcessing}
-              className={cn(
-                "w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 shadow-lg",
-                isRecording
-                  ? "bg-red-500 animate-pulse shadow-red-500/50"
-                  : "bg-slate-600 hover:bg-slate-700 hover:shadow-slate-600/50",
-                isProcessing && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {isRecording ? (
-                <MicOff className="w-10 h-10 text-white" />
-              ) : (
-                <Mic className="w-10 h-10 text-white" />
-              )}
-            </button>
+        {/* Recording Area */}
+        <div className="mt-8">
+          {/* File Upload */}
+          <div className="mb-6 text-center">
+            <label className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 cursor-pointer transition-colors">
+              <Upload className="w-4 h-4" />
+              <span>上传音频文件 (MP3/WAV)</span>
+              <input
+                type="file"
+                accept="audio/*"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* Recording Button */}
+          <div className="flex justify-center">
+            {!podcastUrl && (
+              <button
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                disabled={isProcessing}
+                className={cn(
+                  "w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all transform",
+                  isRecording
+                    ? "bg-red-500 scale-105 shadow-lg shadow-red-500/50 animate-pulse"
+                    : "bg-slate-600 hover:bg-slate-700 hover:scale-105"
+                )}
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-8 h-8 text-white mb-1" />
+                    <span className="text-xs text-white font-medium flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {formatTime(recordingTime)}
+                    </span>
+                  </>
+                ) : (
+                  <Mic className="w-8 h-8 text-white" />
+                )}
+              </button>
+            )}
+          </div>
+
+          <p className="text-center mt-4 text-slate-500 text-sm">
+            {isRecording ? '松开结束录音' : isProcessing ? '正在生成播客...' : '按住录音或上传音频文件'}
+          </p>
+
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="mt-4 text-center">
+              <div className="inline-flex items-center gap-2 text-sm text-blue-600">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                上传中...
+              </div>
+            </div>
           )}
         </div>
 
-        {/* 提示文字 */}
-        <div className="text-center mt-4 text-slate-500">
-          {isRecording ? '松开结束录音' : isProcessing ? '正在生成播客...' : '按住录音'}
-        </div>
+        {/* Processing Indicator */}
+        {isProcessing && (
+          <div className="fixed inset-0 bg-white bg-opacity-90 flex items-center justify-center">
+            <div className="bg-white rounded-lg shadow-lg p-8 border border-slate-200">
+              <div className="flex flex-col items-center">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-700">正在生成播客...</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
