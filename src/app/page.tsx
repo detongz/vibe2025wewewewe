@@ -113,6 +113,28 @@ export default function Home() {
     }
   }
 
+  // 发送音频流到后端
+  const sendAudioToBackend = async (audioChunk: Blob) => {
+    try {
+      // 将 Blob 转换为 ArrayBuffer
+      const arrayBuffer = await audioChunk.arrayBuffer()
+
+      // 发送到后端（即使后端不存在）
+      fetch('/api/audio-stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'audio/webm',
+        },
+        body: arrayBuffer,
+      }).catch(err => {
+        // 即使后端不存在也不报错，静默处理
+        console.log('音频流发送到后端（后端可以不存在）')
+      })
+    } catch (error) {
+      console.log('音频流处理:', error)
+    }
+  }
+
   // 播放AI回复的提示音
   const playAiResponseSound = () => {
     try {
@@ -163,6 +185,9 @@ export default function Home() {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data)
           console.log('录音数据:', event.data.size, 'bytes')
+
+          // 发送音频数据到后端
+          sendAudioToBackend(event.data)
         }
       }
 
@@ -472,7 +497,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="flex items-center justify-center gap-3">
             <Headphones className="w-8 h-8 text-slate-600" />
-            <h1 className="text-3xl font-light text-slate-900">娓语</h1>
+            <h1 className="text-3xl font-light text-slate-900">【娓语】</h1>
           </div>
           <p className="text-center text-slate-500 mt-2">AI语音播客编导</p>
         </div>
