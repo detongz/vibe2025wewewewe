@@ -43,6 +43,7 @@ export default function Home() {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const audioStreamRef = useRef<MediaStream | null>(null)
+  const [isAiThinking, setIsAiThinking] = useState(false)
 
   const getStepStatus = (stepId: number): 'pending' | 'recording' | 'completed' => {
     if (stepId < currentStep) return 'completed'
@@ -112,6 +113,32 @@ export default function Home() {
     }
   }
 
+  // 播放AI回复的提示音
+  const playAiResponseSound = () => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+
+      // 设置柔和的回复提示音
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime) // G5
+      oscillator.frequency.exponentialRampToValueAtTime(1046.50, audioContext.currentTime + 0.1) // C6
+
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime)
+      gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.02)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2)
+
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.2)
+    } catch (err) {
+      console.error('播放提示音失败:', err)
+    }
+  }
+
   const startRecording = async () => {
     if (!mediaRecorderRef.current) {
       console.error('MediaRecorder 未初始化')
@@ -126,7 +153,7 @@ export default function Home() {
       const recordingMessage: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: '🎙️ 正在录音...',
+        content: '🎙️ 深呼吸...慢慢说，我在听',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, recordingMessage])
@@ -182,24 +209,31 @@ export default function Home() {
             msg.id === userMessage.id ? { ...msg, content: transcript } : msg
           ))
 
-          // 准备AI响应
-          if (currentStep < 2) {
-            const aiMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: steps[currentStep + 1].prompt,
-              timestamp: new Date()
-            }
-            setTimeout(() => {
+          // 设置AI思考状态
+          setIsAiThinking(true)
+
+          // 延迟显示AI回复，创造期待感
+          setTimeout(() => {
+            setIsAiThinking(false)
+
+            // 准备AI响应
+            if (currentStep < 2) {
+              const aiMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: steps[currentStep + 1].prompt,
+                timestamp: new Date()
+              }
               setMessages(prev => [...prev, aiMessage])
               setCurrentStep(prev => prev + 1)
-            }, 1000)
-          } else {
-            // 完成三步，生成播客
-            setTimeout(() => {
+
+              // 播放AI回复的提示音
+              playAiResponseSound()
+            } else {
+              // 完成三步，生成播客
               generatePodcast()
-            }, 1000)
-          }
+            }
+          }, 2000)
         }, 1000)
       }
 
@@ -213,21 +247,30 @@ export default function Home() {
         setRecordingTime(prev => prev + 1)
       }, 1000)
 
-      // 播放提示音（可选）
+      // 播放温暖的提示音
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
+      const filter = audioContext.createBiquadFilter()
 
-      oscillator.connect(gainNode)
+      oscillator.connect(filter)
+      filter.connect(gainNode)
       gainNode.connect(audioContext.destination)
 
-      oscillator.frequency.value = 800
+      // 设置温暖的音色
       oscillator.type = 'sine'
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2)
+      oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime) // C5
+      oscillator.frequency.exponentialRampToValueAtTime(659.25, audioContext.currentTime + 0.1) // E5
+
+      filter.type = 'lowpass'
+      filter.frequency.value = 2000
+
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime)
+      gainNode.gain.linearRampToValueAtTime(0.15, audioContext.currentTime + 0.05)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
 
       oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.2)
+      oscillator.stop(audioContext.currentTime + 0.3)
 
     } catch (err) {
       console.error('启动录音失败:', err)
@@ -273,8 +316,13 @@ export default function Home() {
 
       setIsUploading(false)
 
+      // 设置AI思考状态
+      setIsAiThinking(true)
+
       // 上传后的AI响应
       setTimeout(() => {
+        setIsAiThinking(false)
+
         if (currentStep < 2) {
           const aiMessage: Message = {
             id: (Date.now() + 1).toString(),
@@ -284,10 +332,11 @@ export default function Home() {
           }
           setMessages(prev => [...prev, aiMessage])
           setCurrentStep(prev => prev + 1)
+          playAiResponseSound()
         } else {
           generatePodcast()
         }
-      }, 1000)
+      }, 2000)
     }
   }
 
@@ -343,18 +392,70 @@ export default function Home() {
   return (
     <>
       <style jsx>{`
-        @keyframes ping-delay {
+        @keyframes heartbeat {
           0% {
             transform: scale(1);
-            opacity: 1;
+            opacity: 0.8;
           }
-          75%, 100% {
+          20% {
+            transform: scale(1.05);
+            opacity: 0.4;
+          }
+          40% {
+            transform: scale(1.1);
+            opacity: 0.2;
+          }
+          60% {
+            transform: scale(1.15);
+            opacity: 0.1;
+          }
+          80% {
+            transform: scale(1.2);
+            opacity: 0.05;
+          }
+          100% {
             transform: scale(1.5);
             opacity: 0;
           }
         }
-        .animation-delay-200 {
-          animation-delay: 200ms;
+
+        @keyframes pulse-ring {
+          0% {
+            transform: scale(0.95);
+            opacity: 1;
+          }
+          40% {
+            transform: scale(1.3);
+            opacity: 0.5;
+          }
+          100% {
+            transform: scale(1.6);
+            opacity: 0;
+          }
+        }
+
+        .heartbeat-animation {
+          animation: heartbeat 2s ease-in-out infinite;
+        }
+
+        .heartbeat-delay-1 {
+          animation-delay: 0.5s;
+        }
+
+        .heartbeat-delay-2 {
+          animation-delay: 1s;
+        }
+
+        .heartbeat-delay-3 {
+          animation-delay: 1.5s;
+        }
+
+        .ai-thinking {
+          animation: pulse-ring 3s ease-in-out infinite;
+        }
+
+        .ai-thinking-delay {
+          animation-delay: 1s;
         }
       `}</style>
       <div className="min-h-screen bg-white">
@@ -401,9 +502,21 @@ export default function Home() {
         </div>
 
         {/* Chat Area */}
-        <div className="bg-slate-50 rounded-2xl p-6 mb-8 h-96 overflow-y-auto">
+        <div className="bg-slate-50 rounded-2xl p-6 mb-8 h-96 overflow-y-auto relative">
+          {/* AI思考时的波纹效果 */}
+          {isAiThinking && (
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 pointer-events-none">
+              <div className="relative">
+                <div className="absolute inset-0 w-16 h-16 rounded-full bg-gradient-to-r from-blue-400/20 to-indigo-400/20 ai-thinking"></div>
+                <div className="absolute inset-0 w-16 h-16 rounded-full bg-gradient-to-r from-blue-400/15 to-indigo-400/15 ai-thinking ai-thinking-delay"></div>
+                <div className="w-16 h-16 rounded-full bg-white/80 flex items-center justify-center backdrop-blur-sm">
+                  <Sparkles className="w-6 h-6 text-blue-500 animate-pulse" />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4">
-            {messages.map((message) => (
               <div
                 key={message.id}
                 className={cn(
@@ -490,11 +603,13 @@ export default function Home() {
           <div className="flex justify-center">
             {!podcastUrl && (
               <div className="relative">
-                {/* 录音时的波纹效果 */}
+                {/* 录音时的心跳波纹效果 */}
                 {isRecording && (
                   <>
-                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-red-400/30 animate-ping"></div>
-                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-red-400/20 animate-ping animation-delay-200"></div>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-gradient-to-r from-rose-400/40 to-pink-400/40 heartbeat-animation"></div>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-gradient-to-r from-rose-400/30 to-pink-400/30 heartbeat-animation heartbeat-delay-1"></div>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-gradient-to-r from-rose-400/20 to-pink-400/20 heartbeat-animation heartbeat-delay-2"></div>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-gradient-to-r from-rose-400/10 to-pink-400/10 heartbeat-animation heartbeat-delay-3"></div>
                   </>
                 )}
 
@@ -505,16 +620,19 @@ export default function Home() {
                   onTouchEnd={stopRecording}
                   disabled={isProcessing}
                   className={cn(
-                    "relative w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all transform",
+                    "relative w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all transform overflow-hidden",
                     isRecording
-                      ? "bg-red-500 scale-105 shadow-xl shadow-red-500/50"
+                      ? "bg-gradient-to-br from-rose-500 to-pink-600 scale-105 shadow-2xl shadow-rose-500/50"
                       : "bg-slate-600 hover:bg-slate-700 hover:scale-105 shadow-lg shadow-slate-600/30"
                   )}
                 >
+                  {isRecording && (
+                    <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                  )}
                   {isRecording ? (
                     <>
-                      <MicOff className="w-8 h-8 text-white mb-1 animate-pulse" />
-                      <span className="text-xs text-white font-medium flex items-center gap-1">
+                      <MicOff className="w-8 h-8 text-white mb-1 relative z-10 animate-pulse" />
+                      <span className="text-xs text-white font-medium flex items-center gap-1 relative z-10">
                         <Clock className="w-3 h-3" />
                         {formatTime(recordingTime)}
                       </span>
