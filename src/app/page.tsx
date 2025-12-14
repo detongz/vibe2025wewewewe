@@ -497,7 +497,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="flex items-center justify-center gap-3">
             <Headphones className="w-8 h-8 text-slate-600" />
-            <h1 className="text-3xl font-light text-slate-900">【娓语】</h1>
+            <h1 className="text-3xl font-light text-slate-900">娓娓</h1>
           </div>
           <p className="text-center text-slate-500 mt-2">AI语音播客编导</p>
         </div>
@@ -578,6 +578,7 @@ export default function Home() {
           )}
 
           <div className="space-y-4">
+            {messages.map((message) => (
               <div
                 key={message.id}
                 className={cn(
