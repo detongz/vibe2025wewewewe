@@ -457,6 +457,14 @@ export default function Home() {
         .ai-thinking-delay {
           animation-delay: 1s;
         }
+
+        .animation-delay-100 {
+          animation-delay: 100ms;
+        }
+
+        .animation-delay-200 {
+          animation-delay: 200ms;
+        }
       `}</style>
       <div className="min-h-screen bg-white">
       {/* Header */}
@@ -473,29 +481,57 @@ export default function Home() {
       {/* Main Content */}
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Steps Progress */}
-        <div className="flex justify-center mb-8">
-          <div className="flex items-center gap-2 bg-slate-50 rounded-full p-1">
-            {steps.map((step) => (
-              <div key={step.id} className="flex items-center gap-2">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all",
-                    step.status === 'completed' && "bg-slate-800 text-white",
-                    step.status === 'recording' && "bg-blue-500 text-white animate-pulse",
-                    step.status === 'pending' && "bg-slate-200 text-slate-500"
-                  )}
-                >
-                  {step.status === 'completed' ? '✓' : step.id}
+        <div className="flex justify-center mb-12">
+          <div className="flex items-center gap-6">
+            {steps.map((step, index) => (
+              <div key={step.id} className="flex items-center gap-4">
+                <div className="flex flex-col items-center">
+                  <div
+                    className={cn(
+                      "w-16 h-16 rounded-full flex flex-col items-center justify-center text-sm transition-all duration-500 ease-out",
+                      step.status === 'completed'
+                        ? "bg-white border-2 border-slate-800 shadow-sm"
+                        : step.status === 'recording'
+                        ? "bg-white border-2 border-slate-800 shadow-md"
+                        : "bg-white border-2 border-slate-200"
+                    )}
+                  >
+                    {step.status === 'completed' ? (
+                      <span className="text-slate-800 text-lg">✓</span>
+                    ) : step.status === 'recording' ? (
+                      <>
+                        <span className="text-slate-800 font-light">{step.id}</span>
+                        <div className="flex gap-1 mt-1">
+                          <div className="w-1 h-1 bg-slate-800 rounded-full animate-pulse"></div>
+                          <div className="w-1 h-1 bg-slate-800 rounded-full animate-pulse animation-delay-100"></div>
+                          <div className="w-1 h-1 bg-slate-800 rounded-full animate-pulse animation-delay-200"></div>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-slate-400 font-light">{step.id}</span>
+                    )}
+                  </div>
+                  <span className={cn(
+                    "text-xs mt-3 transition-all duration-500",
+                    step.status === 'completed'
+                      ? "text-slate-800 font-normal"
+                      : step.status === 'recording'
+                      ? "text-slate-800 font-medium"
+                      : "text-slate-400 font-light"
+                  )}>
+                    {step.title}
+                  </span>
                 </div>
-                <span className={cn(
-                  "text-sm",
-                  step.status === 'completed' && "text-slate-800 font-medium",
-                  step.status === 'recording' && "text-blue-600 font-medium",
-                  step.status === 'pending' && "text-slate-500"
-                )}>
-                  {step.title}
-                </span>
-                {step.id < 3 && <div className="w-8 h-px bg-slate-300"></div>}
+                {index < steps.length - 1 && (
+                  <div className="relative">
+                    <div
+                      className={cn(
+                        "w-12 h-px transition-all duration-500",
+                        step.status === 'completed' ? "bg-slate-800" : "bg-slate-200"
+                      )}
+                    ></div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
