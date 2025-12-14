@@ -115,11 +115,21 @@ export default function Home() {
   const startRecording = async () => {
     if (!mediaRecorderRef.current) {
       console.error('MediaRecorder 未初始化')
+      alert('录音功能初始化中，请稍后再试')
       return
     }
 
     try {
       audioChunksRef.current = []
+
+      // 立即显示录音中消息
+      const recordingMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '🎙️ 正在录音...',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, recordingMessage])
 
       // 设置数据处理回调
       mediaRecorderRef.current.ondataavailable = (event) => {
@@ -134,6 +144,9 @@ export default function Home() {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         const audioUrl = URL.createObjectURL(audioBlob)
         console.log('录音完成，音频大小:', audioBlob.size, 'bytes')
+
+        // 移除"正在录音"的消息
+        setMessages(prev => prev.filter(msg => msg.id !== recordingMessage.id))
 
         const newRecording: Recording = {
           id: Date.now().toString(),
@@ -199,6 +212,22 @@ export default function Home() {
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1)
       }, 1000)
+
+      // 播放提示音（可选）
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+
+      oscillator.frequency.value = 800
+      oscillator.type = 'sine'
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2)
+
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.2)
 
     } catch (err) {
       console.error('启动录音失败:', err)
@@ -312,7 +341,23 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <>
+      <style jsx>{`
+        @keyframes ping-delay {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          75%, 100% {
+            transform: scale(1.5);
+            opacity: 0;
+          }
+        }
+        .animation-delay-200 {
+          animation-delay: 200ms;
+        }
+      `}</style>
+      <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="border-b border-slate-200">
         <div className="max-w-4xl mx-auto px-4 py-6">
@@ -444,31 +489,41 @@ export default function Home() {
           {/* Recording Button */}
           <div className="flex justify-center">
             {!podcastUrl && (
-              <button
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-                onTouchStart={startRecording}
-                onTouchEnd={stopRecording}
-                disabled={isProcessing}
-                className={cn(
-                  "w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all transform",
-                  isRecording
-                    ? "bg-red-500 scale-105 shadow-lg shadow-red-500/50 animate-pulse"
-                    : "bg-slate-600 hover:bg-slate-700 hover:scale-105"
-                )}
-              >
-                {isRecording ? (
+              <div className="relative">
+                {/* 录音时的波纹效果 */}
+                {isRecording && (
                   <>
-                    <MicOff className="w-8 h-8 text-white mb-1" />
-                    <span className="text-xs text-white font-medium flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatTime(recordingTime)}
-                    </span>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-red-400/30 animate-ping"></div>
+                    <div className="absolute inset-0 w-24 h-24 rounded-full bg-red-400/20 animate-ping animation-delay-200"></div>
                   </>
-                ) : (
-                  <Mic className="w-8 h-8 text-white" />
                 )}
-              </button>
+
+                <button
+                  onMouseDown={startRecording}
+                  onMouseUp={stopRecording}
+                  onTouchStart={startRecording}
+                  onTouchEnd={stopRecording}
+                  disabled={isProcessing}
+                  className={cn(
+                    "relative w-24 h-24 rounded-full flex flex-col items-center justify-center transition-all transform",
+                    isRecording
+                      ? "bg-red-500 scale-105 shadow-xl shadow-red-500/50"
+                      : "bg-slate-600 hover:bg-slate-700 hover:scale-105 shadow-lg shadow-slate-600/30"
+                  )}
+                >
+                  {isRecording ? (
+                    <>
+                      <MicOff className="w-8 h-8 text-white mb-1 animate-pulse" />
+                      <span className="text-xs text-white font-medium flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formatTime(recordingTime)}
+                      </span>
+                    </>
+                  ) : (
+                    <Mic className="w-8 h-8 text-white" />
+                  )}
+                </button>
+              </div>
             )}
           </div>
 
@@ -500,5 +555,6 @@ export default function Home() {
         )}
       </div>
     </div>
+    </>
   )
 }
