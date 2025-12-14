@@ -42,6 +42,7 @@ export default function Home() {
   const audioChunksRef = useRef<Blob[]>([])
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const audioStreamRef = useRef<MediaStream | null>(null)
 
   const getStepStatus = (stepId: number): 'pending' | 'recording' | 'completed' => {
     if (stepId < currentStep) return 'completed'
@@ -83,9 +84,13 @@ export default function Home() {
       content: steps[0].prompt,
       timestamp: new Date()
     }])
+
+    // 预先请求麦克风权限并初始化音频流
+    initAudioStream()
   }, [])
 
-  const startRecording = async () => {
+  // 初始化音频流
+  const initAudioStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -94,21 +99,41 @@ export default function Home() {
           sampleRate: 44100
         }
       })
+      audioStreamRef.current = stream
 
+      // 预先创建MediaRecorder但不开始录制
       const options = { mimeType: 'audio/webm;codecs=opus' }
       const mediaRecorder = new MediaRecorder(stream, options)
       mediaRecorderRef.current = mediaRecorder
+
+      console.log('麦克风权限已获取，准备就绪')
+    } catch (err) {
+      console.error('初始化音频流失败:', err)
+    }
+  }
+
+  const startRecording = async () => {
+    if (!mediaRecorderRef.current) {
+      console.error('MediaRecorder 未初始化')
+      return
+    }
+
+    try {
       audioChunksRef.current = []
 
-      mediaRecorder.ondataavailable = (event) => {
+      // 设置数据处理回调
+      mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data)
+          console.log('录音数据:', event.data.size, 'bytes')
         }
       }
 
-      mediaRecorder.onstop = () => {
+      // 设置录音结束回调
+      mediaRecorderRef.current.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         const audioUrl = URL.createObjectURL(audioBlob)
+        console.log('录音完成，音频大小:', audioBlob.size, 'bytes')
 
         const newRecording: Recording = {
           id: Date.now().toString(),
@@ -163,13 +188,12 @@ export default function Home() {
             }, 1000)
           }
         }, 1000)
-
-        // 清理
-        stream.getTracks().forEach(track => track.stop())
       }
 
-      mediaRecorder.start(100)
+      // 开始录音
+      mediaRecorderRef.current.start(100)
       setIsRecording(true)
+      console.log('开始录音...')
 
       // 开始计时
       recordingIntervalRef.current = setInterval(() => {
@@ -177,8 +201,8 @@ export default function Home() {
       }, 1000)
 
     } catch (err) {
-      console.error('无法访问麦克风:', err)
-      alert('请允许访问麦克风以使用录音功能')
+      console.error('启动录音失败:', err)
+      alert('录音启动失败，请刷新页面重试')
     }
   }
 
@@ -294,7 +318,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="flex items-center justify-center gap-3">
             <Headphones className="w-8 h-8 text-slate-600" />
-            <h1 className="text-3xl font-light text-slate-900">声记</h1>
+            <h1 className="text-3xl font-light text-slate-900">娓语</h1>
           </div>
           <p className="text-center text-slate-500 mt-2">AI语音播客编导</p>
         </div>
