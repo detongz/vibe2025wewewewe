@@ -258,7 +258,7 @@ export default function Home() {
                 ? "text-white" 
                 : "text-gray-900"
             )}>
-              声记
+              娓娓
             </h1>
           </div>
           <p className={cn(
