@@ -30,4 +30,5 @@ echo "🚀 启动服务..."
 ssh $SERVER_USER@$SERVER_IP "cd $REMOTE_DIR && nohup npm start > server.log 2>&1 & echo 'Service started'"
 
 echo "✅ 部署完成！"
-echo "🌐 访问地址: http://$SERVER_IP:8080"
+echo "🌐 访问地址: http://$SERVER_IP/"
+echo "📖 详细说明请查看: DEPLOYMENT_PORT_GUIDE.md"

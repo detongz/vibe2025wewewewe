@@ -200,7 +200,9 @@ export default function Home() {
       setMessages(prev => prev.map(msg =>
         msg.id === processingMessage.id ? {
           ...msg,
-          content: '🎉 你的播客已经准备好了！点击下方播放按钮听听效果。'
+          content: isDarkMode
+            ? '🎄 圣诞快乐！你的播客已经准备好了！点击下方播放按钮听听效果。'
+            : '🎉 你的播客已经准备好了！点击下方播放按钮听听效果。'
         } : msg
       ))
     }, 3000)
@@ -213,20 +215,50 @@ export default function Home() {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300",
-      isDarkMode 
-        ? "bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white" 
+      "min-h-screen transition-colors duration-500",
+      isDarkMode
+        ? "bg-gradient-to-br from-slate-900 via-emerald-900/20 to-slate-900 text-white"
         : "bg-white text-gray-900"
     )}>
       {/* 圣诞装饰 - 仅在深色模式显示 */}
       {isDarkMode && (
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-20 text-green-500 text-xl opacity-20">❄️</div>
-          <div className="absolute top-40 right-40 text-red-400 text-lg opacity-15">✨</div>
-          <div className="absolute bottom-40 left-40 text-green-500 text-xl opacity-20">❄️</div>
-          <div className="absolute bottom-20 right-20 text-red-400 text-lg opacity-15">✨</div>
-          <div className="absolute top-60 left-60 text-green-400 text-sm opacity-10">•</div>
-          <div className="absolute bottom-60 right-60 text-red-300 text-sm opacity-10">•</div>
+          {/* 雪花效果 */}
+          {[...Array(15)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute text-white opacity-30 animate-snowfall"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 10}s`,
+                animationDuration: `${8 + Math.random() * 7}s`,
+                fontSize: `${8 + Math.random() * 12}px`
+              }}
+            >
+              ❄️
+            </div>
+          ))}
+
+          {/* 闪烁星星 */}
+          {[...Array(8)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute text-yellow-300 animate-twinkle"
+              style={{
+                left: `${10 + Math.random() * 80}%`,
+                top: `${10 + Math.random() * 80}%`,
+                animationDelay: `${Math.random() * 2}s`,
+                fontSize: `${12 + Math.random() * 8}px`
+              }}
+            >
+              ✨
+            </div>
+          ))}
+
+          {/* 圣诞树装饰 */}
+          <div className="absolute top-10 left-10 text-green-500 text-2xl opacity-40 animate-float">🎄</div>
+          <div className="absolute top-16 right-16 text-red-400 text-xl opacity-30 animate-float" style={{animationDelay: '2s'}}>🎁</div>
+          <div className="absolute bottom-20 left-20 text-green-400 text-lg opacity-25 animate-float" style={{animationDelay: '4s'}}>🌟</div>
         </div>
       )}
 
@@ -235,9 +267,9 @@ export default function Home() {
         <button
           onClick={toggleTheme}
           className={cn(
-            "w-8 h-8 rounded-full flex items-center justify-center transition-all text-sm",
+            "w-10 h-10 rounded-full flex items-center justify-center transition-all text-sm animate-glow",
             isDarkMode
-              ? "bg-green-600 hover:bg-green-700 text-white"
+              ? "bg-gradient-to-br from-green-600 to-emerald-500 hover:from-green-700 hover:to-emerald-600 text-white shadow-lg"
               : "bg-gray-200 hover:bg-gray-300 text-gray-600"
           )}
         >
@@ -274,36 +306,36 @@ export default function Home() {
         {/* 步骤指示器 */}
         <div className="flex justify-center mb-12">
           <div className={cn(
-            "flex items-center gap-4 rounded-full p-2 transition-colors",
-            isDarkMode ? "bg-slate-800/50" : "bg-gray-100"
+            "flex items-center gap-4 rounded-full p-2 transition-colors backdrop-blur-sm",
+            isDarkMode ? "bg-slate-800/30 border border-slate-700/50" : "bg-gray-100"
           )}>
             {steps.map((step, index) => (
               <div key={step.step} className="flex items-center">
                 <div
                   className={cn(
-                    "w-12 h-12 rounded-full flex items-center justify-center font-semibold transition-all",
+                    "w-12 h-12 rounded-full flex items-center justify-center font-semibold transition-all border-2",
                     step.isCompleted
-                      ? isDarkMode 
-                        ? "bg-green-600 text-white" 
-                        : "bg-gray-900 text-white"
+                      ? isDarkMode
+                        ? "bg-green-600 border-green-400 text-white shadow-lg shadow-green-500/25"
+                        : "bg-gray-900 border-gray-700 text-white"
                       : currentStep === index
-                      ? isDarkMode 
-                        ? "bg-red-600 text-white" 
-                        : "bg-gray-800 text-white"
-                      : isDarkMode 
-                        ? "bg-slate-700 text-gray-400" 
-                        : "bg-gray-200 text-gray-500"
+                      ? isDarkMode
+                        ? "bg-red-500 border-red-300 text-white shadow-lg shadow-red-500/25"
+                        : "bg-gray-800 border-gray-600 text-white"
+                      : isDarkMode
+                        ? "bg-slate-700/50 border-slate-600 text-gray-400"
+                        : "bg-gray-200 border-gray-300 text-gray-500"
                   )}
                 >
-                  {step.isCompleted ? '✓' : step.step}
+                  {step.isCompleted ? '🎄' : step.step}
                 </div>
                 <span className={cn(
                   "ml-2 mr-4 text-sm font-medium transition-colors",
-                  step.isCompleted 
-                    ? isDarkMode ? "text-green-300" : "text-gray-900" 
-                    : currentStep === index 
-                    ? isDarkMode ? "text-red-300" : "text-gray-700" 
-                    : isDarkMode ? "text-gray-500" : "text-gray-400"
+                  step.isCompleted
+                    ? isDarkMode ? "text-green-300" : "text-gray-900"
+                    : currentStep === index
+                    ? isDarkMode ? "text-red-300" : "text-gray-700"
+                    : isDarkMode ? "text-gray-400" : "text-gray-500"
                 )}>
                   {step.title}
                 </span>
@@ -328,23 +360,23 @@ export default function Home() {
               >
                 {message.role === 'assistant' && (
                   <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
-                    isDarkMode 
-                      ? "bg-green-600" 
-                      : "bg-gray-800"
+                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors border",
+                    isDarkMode
+                      ? "bg-green-600 border-green-400 shadow-lg shadow-green-500/25"
+                      : "bg-gray-800 border-gray-700"
                   )}>
                     <Sparkles className="w-4 h-4 text-white" />
                   </div>
                 )}
                 <div
                   className={cn(
-                    "max-w-md rounded-2xl px-4 py-3 transition-colors",
+                    "max-w-md rounded-2xl px-4 py-3 transition-colors border",
                     message.role === 'user'
-                      ? isDarkMode 
-                        ? "bg-red-600 text-white" 
-                        : "bg-gray-800 text-white"
-                      : isDarkMode 
-                        ? "bg-slate-700 text-gray-100" 
+                      ? isDarkMode
+                        ? "bg-red-500 border-red-300 text-white shadow-lg shadow-red-500/25"
+                        : "bg-gray-800 border-gray-700 text-white"
+                      : isDarkMode
+                        ? "bg-slate-700/80 border-slate-600 text-gray-100 backdrop-blur-sm"
                         : "bg-white border border-gray-200 text-gray-700"
                   )}
                 >
@@ -357,8 +389,10 @@ export default function Home() {
                 </div>
                 {message.role === 'user' && (
                   <div className={cn(
-                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors",
-                    isDarkMode ? "bg-slate-700" : "bg-gray-600"
+                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors border",
+                    isDarkMode
+                      ? "bg-slate-700 border-slate-600 shadow-lg shadow-slate-500/25"
+                      : "bg-gray-600 border-gray-500"
                   )}>
                     <Waves className="w-4 h-4 text-white" />
                   </div>
@@ -371,15 +405,15 @@ export default function Home() {
         {/* 播客播放器 */}
         {podcastUrl && (
           <div className={cn(
-            "rounded-2xl p-6 mb-8 border transition-colors",
-            isDarkMode 
-              ? "bg-slate-800/50 border-slate-700" 
+            "rounded-2xl p-6 mb-8 border transition-colors backdrop-blur-sm",
+            isDarkMode
+              ? "bg-slate-800/30 border-slate-600/50 shadow-lg shadow-green-500/10"
               : "bg-gray-50 border-gray-200"
           )}>
             <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
               <Sparkles className={cn(
                 "w-6 h-6 transition-colors",
-                isDarkMode ? "text-green-400" : "text-gray-600"
+                isDarkMode ? "text-green-400 animate-twinkle" : "text-gray-600"
               )} />
               你的播客
             </h3>
@@ -407,19 +441,19 @@ export default function Home() {
             )}
             <div className="flex gap-3">
               <button className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-                isDarkMode 
-                  ? "bg-green-600 hover:bg-green-700 text-white" 
-                  : "bg-gray-800 hover:bg-gray-900 text-white"
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border",
+                isDarkMode
+                  ? "bg-green-600 border-green-500 hover:bg-green-700 text-white shadow-lg shadow-green-500/25"
+                  : "bg-gray-800 border-gray-700 hover:bg-gray-900 text-white"
               )}>
                 <Share2 className="w-4 h-4" />
                 分享
               </button>
               <button className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors",
-                isDarkMode 
-                  ? "bg-slate-700 hover:bg-slate-600 text-white" 
-                  : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                "flex items-center gap-2 px-4 py-2 rounded-lg transition-colors border",
+                isDarkMode
+                  ? "bg-slate-700/80 border-slate-600 hover:bg-slate-600 text-white backdrop-blur-sm"
+                  : "bg-gray-200 border-gray-300 hover:bg-gray-300 text-gray-700"
               )}>
                 <Download className="w-4 h-4" />
                 下载
@@ -439,12 +473,12 @@ export default function Home() {
                 onTouchEnd={stopRecording}
                 disabled={isProcessing}
                 className={cn(
-                  "w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105",
+                  "w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 border-4",
                   isRecording
-                    ? "bg-red-500 animate-pulse shadow-lg shadow-red-500/50"
+                    ? "bg-red-500 border-red-300 animate-pulse shadow-2xl shadow-red-500/50"
                     : isDarkMode
-                      ? "bg-gradient-to-r from-green-600 to-red-600 hover:shadow-lg hover:shadow-green-500/50"
-                      : "bg-gray-800 hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-800/50",
+                      ? "bg-gradient-to-br from-green-500 to-red-500 border-green-300 hover:shadow-2xl hover:shadow-green-500/50"
+                      : "bg-gray-800 border-gray-600 hover:bg-gray-900 hover:shadow-2xl hover:shadow-gray-800/50",
                   isProcessing && "opacity-50 cursor-not-allowed"
                 )}
               >
