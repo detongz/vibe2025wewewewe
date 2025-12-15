@@ -111,6 +111,14 @@ export default function Home() {
       setIsRecording(true)
     } catch (err) {
       console.error('Error accessing microphone:', err)
+      // 添加错误消息给用户
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: '录音启动失败，请检查麦克风权限并刷新页面重试',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
     }
   }
 

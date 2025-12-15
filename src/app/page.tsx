@@ -221,25 +221,27 @@ export default function Home() {
       {/* 圣诞装饰 - 仅在深色模式显示 */}
       {isDarkMode && (
         <div className="fixed inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-10 left-10 text-green-400 text-2xl opacity-20">❄️</div>
-          <div className="absolute top-20 right-20 text-red-400 text-xl opacity-20">✨</div>
-          <div className="absolute bottom-20 left-20 text-green-400 text-lg opacity-20">❄️</div>
-          <div className="absolute bottom-10 right-10 text-red-400 text-xl opacity-20">✨</div>
+          <div className="absolute top-20 left-20 text-green-500 text-xl opacity-20">❄️</div>
+          <div className="absolute top-40 right-40 text-red-400 text-lg opacity-15">✨</div>
+          <div className="absolute bottom-40 left-40 text-green-500 text-xl opacity-20">❄️</div>
+          <div className="absolute bottom-20 right-20 text-red-400 text-lg opacity-15">✨</div>
+          <div className="absolute top-60 left-60 text-green-400 text-sm opacity-10">•</div>
+          <div className="absolute bottom-60 right-60 text-red-300 text-sm opacity-10">•</div>
         </div>
       )}
 
       {/* 主题切换按钮 */}
-      <div className="fixed top-4 right-4 z-20">
+      <div className="fixed top-6 right-6 z-20">
         <button
           onClick={toggleTheme}
           className={cn(
-            "w-10 h-10 rounded-full flex items-center justify-center transition-all text-sm",
-            isDarkMode 
-              ? "bg-slate-700 hover:bg-slate-600 text-green-300" 
+            "w-8 h-8 rounded-full flex items-center justify-center transition-all text-sm",
+            isDarkMode
+              ? "bg-green-600 hover:bg-green-700 text-white"
               : "bg-gray-200 hover:bg-gray-300 text-gray-600"
           )}
         >
-          {isDarkMode ? '🎄' : '🌙'}
+          {isDarkMode ? '🎄' : '☀️'}
         </button>
       </div>
 
@@ -253,9 +255,9 @@ export default function Home() {
               isDarkMode ? "text-green-400" : "text-gray-600"
             )} />
             <h1 className={cn(
-              "text-5xl font-bold transition-colors",
-              isDarkMode 
-                ? "text-white" 
+              "text-5xl font-light transition-colors tracking-tight",
+              isDarkMode
+                ? "text-white"
                 : "text-gray-900"
             )}>
               娓娓
@@ -427,40 +429,42 @@ export default function Home() {
         )}
 
         {/* 录音控制 */}
-        <div className="flex justify-center">
-          {!podcastUrl && (
-            <button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onTouchStart={startRecording}
-              onTouchEnd={stopRecording}
-              disabled={isProcessing}
-              className={cn(
-                "w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105",
-                isRecording
-                  ? "bg-red-500 animate-pulse shadow-lg shadow-red-500/50"
-                  : isDarkMode 
-                    ? "bg-gradient-to-r from-green-600 to-red-600 hover:shadow-lg hover:shadow-green-500/50" 
-                    : "bg-gray-800 hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-800/50",
-                isProcessing && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {isRecording ? (
-                <MicOff className="w-10 h-10 text-white" />
-              ) : (
-                <Mic className="w-10 h-10 text-white" />
-              )}
-            </button>
-          )}
-        </div>
+        {!podcastUrl && (
+          <>
+            <div className="flex justify-center">
+              <button
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                disabled={isProcessing}
+                className={cn(
+                  "w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105",
+                  isRecording
+                    ? "bg-red-500 animate-pulse shadow-lg shadow-red-500/50"
+                    : isDarkMode
+                      ? "bg-gradient-to-r from-green-600 to-red-600 hover:shadow-lg hover:shadow-green-500/50"
+                      : "bg-gray-800 hover:bg-gray-900 hover:shadow-lg hover:shadow-gray-800/50",
+                  isProcessing && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isRecording ? (
+                  <MicOff className="w-10 h-10 text-white" />
+                ) : (
+                  <Mic className="w-10 h-10 text-white" />
+                )}
+              </button>
+            </div>
 
-        {/* 提示文字 */}
-        <div className={cn(
-          "text-center mt-4 transition-colors",
-          isDarkMode ? "text-gray-400" : "text-gray-500"
-        )}>
-          {isRecording ? '松开结束录音' : isProcessing ? '正在生成播客...' : '按住录音'}
-        </div>
+            {/* 提示文字 */}
+            <div className={cn(
+              "text-center mt-4 transition-colors",
+              isDarkMode ? "text-gray-400" : "text-gray-500"
+            )}>
+              {isRecording ? '松开结束录音' : isProcessing ? '正在生成播客...' : '按住录音'}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
