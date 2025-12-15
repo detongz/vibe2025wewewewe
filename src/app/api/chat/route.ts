@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
           sender_type: msg.role === 'user' ? 'USER' : 'BOT',
           text: msg.content
         })
-      }
+      })
     }
 
     const response = await fetch(MINIMAX_API_URL, {
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
         reply_constraints: {
           sender_type: 'BOT',
           sender_name: 'AI助手',
+        },
         temperature: 0.7,
         top_p: 0.95,
         stream: false,
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     const data = await response.json()
 
     // 提取AI回复
-    const aiReply = data.choices?.[0]?.message?.text || '抱歉，我没有理解你的意思。')
+    const aiReply = data.choices?.[0]?.message?.text || '抱歉，我没有理解你的意思。'
 
     return NextResponse.json({
       reply: aiReply,

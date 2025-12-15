@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         title: script.title,
         script: fullScript,
         timeline: timeline,
-        duration: timeline[timeline.length - 1].start_time + timeline[timeline.length - 1].duration,
+        duration: timeline.length > 0 && timeline[timeline.length - 1] ? timeline[timeline.length - 1].start_time + timeline[timeline.length - 1].duration : 0,
         narration_count: narrationAudios.length,
         user_clip_count: script.user_clips.length
       }

@@ -281,6 +281,25 @@ export default function Home() {
     setIsDarkMode(!isDarkMode)
   }
 
+  // 获取随机圣诞主题emoji
+  const getRandomChristmasEmoji = () => {
+    const christmasEmojis = [
+      '🍪', // 姜饼人
+      '🎄', // 圣诞树
+      '🧦', // 圣诞袜
+      '🍬', // 糖果
+      '🔔', // 铃铛
+      '🌟', // 星星
+      '🎁', // 礼物
+      '❄️', // 雪花
+      '🎅', // 圣诞老人
+      '🦌', // 驯鹿
+      '🕯️', // 蜡烛
+      '⛄'  // 雪人
+    ]
+    return christmasEmojis[Math.floor(Math.random() * christmasEmojis.length)]
+  }
+
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-500",
@@ -385,18 +404,18 @@ export default function Home() {
                     step.isCompleted
                       ? isDarkMode
                         ? "bg-green-600 border-green-400 text-white shadow-lg shadow-green-500/25"
-                        : "bg-gray-900 border-gray-700 text-white"
-                      : currentStep === index
-                      ? isDarkMode
-                        ? "bg-red-500 border-red-300 text-white shadow-lg shadow-red-500/25"
-                        : "bg-gray-800 border-gray-600 text-white"
-                      : isDarkMode
-                        ? "bg-slate-700/50 border-slate-600 text-gray-400"
-                        : "bg-gray-200 border-gray-300 text-gray-500"
-                  )}
-                >
-                  {step.isCompleted ? '🎄' : step.step}
-                </div>
+                    : "bg-gray-900 border-gray-700 text-white"
+                  : currentStep === index
+                  ? isDarkMode
+                    ? "bg-red-500 border-red-300 text-white shadow-lg shadow-red-500/25"
+                    : "bg-gray-800 border-gray-600 text-white"
+                  : isDarkMode
+                    ? "bg-slate-700/50 border-slate-600 text-gray-400"
+                    : "bg-gray-200 border-gray-300 text-gray-500"
+                )}
+              >
+                {step.isCompleted ? getRandomChristmasEmoji() : step.step}
+              </div>
                 <span className={cn(
                   "ml-2 mr-4 text-sm font-medium transition-colors",
                   step.isCompleted

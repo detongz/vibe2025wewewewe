@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Minimax TTS API 端点
-const MINIMAX_API_URL = 'https://api.minimax.chat/v1/tts'
+// Minimax TTS API 端点（根据最新文档）
+const MINIMAX_TTS_URL = 'https://api.minimax.chat/v1/tts'
 
-// 支持的音色映射
+// 正确的音色ID（根据Minimax官方文档）
 const VOICE_MAPPING: { [key: string]: string } = {
-  'male-qn-qingse': 'speaker-1',
-  'male-qn-jingying': 'speaker-2',
-  'male-qn-badao': 'speaker-3',
-  'female-qn-jingying': 'speaker-4',
-  'female-qn-mane': 'speaker-5'
+  'male-qn-qingse': 'voice-0105b311d88e4b3d96c8bc4225d76721',
+  'male-qn-jingying': 'voice-0187c082e25b4f72a7df4a32875b2645',
+  'male-qn-badao': 'voice-01c36724562d4820a617c9c3dd97b804',
+  'female-qn-jingying': 'voice-01900c1a81c9457a8a913261342c61a5',
+  'female-qn-mane': 'voice-01d4375e96644167819e111055ea4378'
 }
 
 export async function POST(request: NextRequest) {
@@ -45,12 +45,11 @@ export async function POST(request: NextRequest) {
 
     console.log('Calling Minimax TTS API:', JSON.stringify(requestBody, null, 2))
 
-    const response = await fetch(MINIMAX_API_URL, {
+    const response = await fetch(MINIMAX_TTS_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'X-GroupId': process.env.MINIMAX_GROUP_ID || 'default'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     })

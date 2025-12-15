@@ -10,7 +10,7 @@ export default function RealTimeChat() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [conversation, setConversation] = useState<Array<{role: 'user' | 'assistant', content: string}>>([])
   const [audioUrl, setAudioUrl] = useState<string>('')
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
@@ -30,11 +30,12 @@ export default function RealTimeChat() {
   const handleConnect = async () => {
     try {
       console.log('正在连接到语音服务...')
-      
+
       // 模拟连接过程
       setTimeout(() => {
         setIsConnected(true)
         console.log('✅ 已连接到语音服务')
+      }, 1000)
     } catch (error) {
       console.error('连接失败:', error)
     }
@@ -43,37 +44,45 @@ export default function RealTimeChat() {
   const startRecording = async () => {
     try {
       console.log('🎤 开始录音...')
-      
+
       // 获取麦克风权限并开始录音
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }))
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
-      
+
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data)
+        }
       }
-      
+
       mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
-      
-      // 模拟语音识别
-      const simulatedTranscript = '这是一段真实的语音识别结果。在实际项目中，这里会调用Minimax API进行语音识别。')
-      setTranscript(simulatedTranscript)
-      
-      // 调用 Minimax Chat API
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: simulatedTranscript,
-          conversation: conversation
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+
+        // 模拟语音识别
+        const simulatedTranscript = '这是一段真实的语音识别结果。在实际项目中，这里会调用Minimax API进行语音识别。'
+        setTranscript(simulatedTranscript)
+
+        // 调用 Minimax Chat API
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: simulatedTranscript,
+            conversation: conversation
+          })
         })
+
+        if (response.ok) {
+          const data = await response.json()
+          setTranscript(data.reply)
+          setConversation(prev => [...prev, { role: 'assistant', content: data.reply }])
+        }
       }
-      
+
       mediaRecorder.start()
       setIsRecording(true)
     } catch (error) {
@@ -85,10 +94,11 @@ export default function RealTimeChat() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop()
       setIsRecording(false)
-      
+
       // 停止所有音频轨道
       mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
     }
+  }
 
   const clearConversation = () => {
     setConversation([])
@@ -99,9 +109,8 @@ export default function RealTimeChat() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 text-white">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <header className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">实时语音对话
-          </h1>
-          <p className="text-xl text-gray-300">基于TEN框架 + Minimax大模型的实时语音交互
+          <h1 className="text-4xl font-bold mb-4">实时语音对话</h1>
+          <p className="text-xl text-gray-300">基于TEN框架 + Minimax大模型的实时语音交互</p>
         </header>
 
         <div className="bg-slate-800/50 rounded-2xl p-6 backdrop-blur-sm border border-slate-700">
@@ -109,7 +118,7 @@ export default function RealTimeChat() {
             {/* 连接状态 */}
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold">连接状态</h2>
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500' }">
+              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}>
                 {isConnected ? '✅ 已连接' : '❌ 未连接'}
               </div>
             </div>
@@ -120,9 +129,10 @@ export default function RealTimeChat() {
                 onClick={handleConnect}
                 disabled={isConnected}
                 className={`w-20 h-20 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
-                isConnected 
-                  ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg border-4 border-green-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-              }`}
+                  isConnected
+                    ? 'bg-green-600 hover:bg-green-700 text-white shadow-lg border-4 border-green-400' 
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
               >
                 {isConnected ? (
                   <Volume2 className="w-10 h-10" />
@@ -138,35 +148,40 @@ export default function RealTimeChat() {
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
                   className={`w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 border-4 ${
-                  isRecording 
-                    ? 'bg-red-500 border-red-300 animate-pulse shadow-2xl shadow-red-500/50' : 'bg-gray-800 border-gray-600 text-white'
-                }`}
-              >
-                {isRecording ? (
-                  <MicOff className="w-12 h-12" />
-                ) : (
-                  <Mic className="w-12 h-12" />
-                )}
-              </button>
+                    isRecording
+                      ? 'bg-red-500 border-red-300 animate-pulse shadow-2xl shadow-red-500/50' 
+                      : 'bg-gray-800 border-gray-600 text-white'
+                  }`}
+                >
+                  {isRecording ? (
+                    <MicOff className="w-12 h-12" />
+                  ) : (
+                    <Mic className="w-12 h-12" />
+                  )}
+                </button>
+              </div>
             )}
 
             {/* 转录显示 */}
             {transcript && (
               <div className="mt-6 p-4 bg-slate-700/80 rounded-lg border border-slate-600">
-                  <p className="text-sm">{transcript}</p>
-                </div>
+                <p className="text-sm">{transcript}</p>
+              </div>
             )}
 
             {/* 对话历史 */}
             <div className="mt-6 space-y-4">
               {conversation.map((message, index) => (
-                <div key={index} className={`p-4 rounded-lg ${
-                message.role === 'user' ? 'bg-blue-600/50' : 'bg-green-600/50' }
-                }`}
-              >
-                <p className="text-sm">{message.content}</p>
+                <div 
+                  key={index} 
+                  className={`p-4 rounded-lg ${
+                    message.role === 'user' ? 'bg-blue-600/50' : 'bg-green-600/50'
+                  }`}
+                >
+                  <p className="text-sm">{message.content}</p>
+                </div>
+              ))}
             </div>
-            ))}
 
             {/* 清空对话按钮 */}
             {conversation.length > 0 && (
