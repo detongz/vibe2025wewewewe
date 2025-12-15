@@ -85,9 +85,6 @@ export default function Home() {
       content: steps[0].prompt,
       timestamp: new Date()
     }])
-
-    // 预先请求麦克风权限并初始化音频流
-    initAudioStream()
   }, [])
 
   // 初始化音频流
@@ -162,10 +159,15 @@ export default function Home() {
   }
 
   const startRecording = async () => {
+    // 如果MediaRecorder未初始化，先初始化音频流
     if (!mediaRecorderRef.current) {
-      console.error('MediaRecorder 未初始化')
-      alert('录音功能初始化中，请稍后再试')
-      return
+      try {
+        await initAudioStream()
+      } catch (err) {
+        console.error('麦克风权限获取失败:', err)
+        alert('无法访问麦克风，请确保已授予麦克风权限')
+        return
+      }
     }
 
     try {
