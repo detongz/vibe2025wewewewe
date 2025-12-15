@@ -9,6 +9,7 @@ export default function TenTest() {
   const [logs, setLogs] = useState<string[]>([])
   const [testText, setTestText] = useState('你好，这是测试语音合成的功能。')
   const [selectedVoice, setSelectedVoice] = useState('male-qn-jingying')
+  const [isConnecting, setIsConnecting] = useState(false)
 
   useEffect(() => {
     const client = getTenClient()
@@ -69,6 +70,33 @@ export default function TenTest() {
     addLog('发送打断信号')
   }
 
+  const handleConnect = async () => {
+    try {
+      setIsConnecting(true)
+      addLog('正在连接到Ten服务器...')
+      const client = getTenClient()
+      await client.connect()
+      setIsConnected(true)
+      addLog('✅ 已连接到Ten服务器')
+    } catch (error) {
+      addLog(`❌ 连接失败: ${error.message}`)
+    } finally {
+      setIsConnecting(false)
+    }
+  }
+
+  const handleDisconnect = async () => {
+    try {
+      addLog('正在断开连接...')
+      const client = getTenClient()
+      await client.disconnect()
+      setIsConnected(false)
+      addLog('已断开连接')
+    } catch (error) {
+      addLog(`断开连接失败: ${error.message}`)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
@@ -77,10 +105,26 @@ export default function TenTest() {
         {/* 连接状态 */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">连接状态</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mb-4">
             <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
             <span>{isConnected ? '已连接到Ten服务器' : '未连接到Ten服务器'}</span>
             <span className="text-gray-500 text-sm">(ws://124.220.31.71:3001)</span>
+          </div>
+          <div className="flex gap-4">
+            <button
+              onClick={handleConnect}
+              disabled={isConnected || isConnecting}
+              className="px-6 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400"
+            >
+              {isConnecting ? '连接中...' : '连接'}
+            </button>
+            <button
+              onClick={handleDisconnect}
+              disabled={!isConnected}
+              className="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:bg-gray-400"
+            >
+              断开连接
+            </button>
           </div>
         </div>
 
