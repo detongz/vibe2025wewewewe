@@ -27,6 +27,8 @@ export default function Home() {
   const [podcastUrl, setPodcastUrl] = useState<string | null>(null)
   const [podcastScript, setPodcastScript] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [userRecordings, setUserRecordings] = useState<string[]>([])
+  const [userTranscripts, setUserTranscripts] = useState<string[]>([])
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
@@ -91,6 +93,10 @@ export default function Home() {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
         const audioUrl = URL.createObjectURL(audioBlob)
 
+        // 保存用户录音
+        userRecordings[currentStep] = audioUrl
+        setUserRecordings([...userRecordings])
+
         // 添加用户消息
         const userMessage: Message = {
           id: Date.now().toString(),
@@ -101,13 +107,17 @@ export default function Home() {
         }
         setMessages(prev => [...prev, userMessage])
 
-        // 模拟转录
+        // 模拟转录（实际项目中应该使用真实的语音转文字服务）
         const transcripts = [
           "那天晚上我站在公司楼下，一直没进去。",
           "在街对面，雨下得挺大的，我躲在屋檐下面。",
           "就是一个终于停下来的人吧。"
         ]
         const transcript = transcripts[currentStep] || "..."
+
+        // 保存转录文本
+        userTranscripts[currentStep] = transcript
+        setUserTranscripts([...userTranscripts])
 
         // 更新用户消息的转录文本
         setMessages(prev => prev.map(msg =>
@@ -175,25 +185,32 @@ export default function Home() {
     }
     setMessages(prev => [...prev, processingMessage])
 
-    // 模拟生成过程
-    setTimeout(() => {
-      const script = `【旁白】
-每个人都有一个不得不面对自己的时刻。
+    try {
+      // 调用真实的播客生成API
+      console.log('Generating podcast with Minimax TTS...')
+      const response = await fetch('/api/podcast/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcripts: userTranscripts,
+          audioUrls: userRecordings
+        })
+      })
 
-【用户原声】
-"那天晚上我站在公司楼下，一直没进去。"
+      if (!response.ok) {
+        throw new Error('Failed to generate podcast')
+      }
 
-【旁白】
-有时候，停下来不是放弃，而是为了更好地认识自己。
+      const data = await response.json()
+      const { podcast } = data
 
-【用户原声】
-"就是一个终于停下来的人吧。"
+      // 创建混合音频URL（前端播放时处理）
+      const mixedAudioUrl = await createMixedAudioUrl(podcast.timeline)
 
-【旁白】
-这就是今天的故事，一个关于停下的故事。`
-
-      setPodcastScript(script)
-      setPodcastUrl('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3')
+      setPodcastScript(podcast.script)
+      setPodcastUrl(mixedAudioUrl)
       setIsProcessing(false)
 
       // 更新处理中消息为完成消息
@@ -205,7 +222,58 @@ export default function Home() {
             : '🎉 你的播客已经准备好了！点击下方播放按钮听听效果。'
         } : msg
       ))
-    }, 3000)
+
+    } catch (error) {
+      console.error('生成播客失败:', error)
+
+      // 降级到模拟数据
+      const script = `【旁白】
+每个人都有一个不得不面对自己的时刻。
+
+【用户原声】
+"${userTranscripts[0] || '那天晚上我站在公司楼下，一直没进去。'}"
+
+【旁白】
+有时候，停下来不是放弃，而是为了更好地认识自己。
+
+【用户原声】
+"${userTranscripts[1] || '在街对面，雨下得挺大的，我躲在屋檐下面。'}"
+
+【旁白】
+那个瞬间，他终于明白了什么。
+
+【用户原声】
+"${userTranscripts[2] || '就是一个终于停下来的人吧。'}"
+
+【旁白】
+这就是今天的故事，一个关于停下的故事。`
+
+      setPodcastScript(script)
+      setPodcastUrl(userRecordings[0] || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3')
+      setIsProcessing(false)
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === processingMessage.id ? {
+          ...msg,
+          content: '播客生成遇到问题，已使用备用方案。请检查Minimax API配置。'
+        } : msg
+      ))
+    }
+  }
+
+  // 创建混合音频URL（简化版，实际项目中需要后端处理）
+  const createMixedAudioUrl = async (timeline: any[]) => {
+    // 这里简化处理，只返回第一个音频
+    // 实际项目中应该在后端使用ffmpeg拼接音频
+    for (const clip of timeline) {
+      if (clip.type === 'narration' && clip.audio_base64) {
+        return `data:audio/mp3;base64,${clip.audio_base64}`
+      }
+      if (clip.type === 'user_clip' && clip.url) {
+        return clip.url
+      }
+    }
+    return userRecordings[0] || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'
   }
 
   // 主题切换函数
