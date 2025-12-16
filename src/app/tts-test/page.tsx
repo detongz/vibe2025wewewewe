@@ -37,7 +37,7 @@ export default function TTSTest() {
 
       // 创建音频URL
       if (data.audio_base64) {
-        const audioBlob = new Buffer.from(data.audio_base64, 'base64')
+        const audioBlob = new Uint8Array(Buffer.from(data.audio_base64, 'base64'))
         const url = URL.createObjectURL(new Blob([audioBlob], { type: 'audio/mp3' }))
         setAudioUrl(url)
       }

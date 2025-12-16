@@ -149,12 +149,17 @@ export async function POST(request: NextRequest) {
     }, '')
 
     // 5. 返回播客数据
+    const lastTimelineItem = timeline.length > 0 ? timeline[timeline.length - 1] : null
+    const duration = lastTimelineItem && lastTimelineItem.start_time !== undefined && lastTimelineItem.duration !== undefined 
+      ? lastTimelineItem.start_time + lastTimelineItem.duration 
+      : 0
+
     return NextResponse.json({
       podcast: {
         title: script.title,
         script: fullScript,
         timeline: timeline,
-        duration: timeline.length > 0 && timeline[timeline.length - 1] ? timeline[timeline.length - 1].start_time + timeline[timeline.length - 1].duration : 0,
+        duration: duration,
         narration_count: narrationAudios.length,
         user_clip_count: script.user_clips.length
       }

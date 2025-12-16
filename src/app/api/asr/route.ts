@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, voice } = await request.json()
+    const formData = await request.formData()
+    const audioFile = formData.get('audio') as File
 
-    if (!text || !voice) {
+    if (!audioFile) {
       return NextResponse.json(
-        { error: '缺少必要参数: text, voice' },
+        { error: '缺少音频文件' },
         { status: 400 }
       )
     }
@@ -22,8 +23,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 将音频文件转换为base64
+    const audioBuffer = await audioFile.arrayBuffer()
+    const audioBase64 = Buffer.from(audioBuffer).toString('base64')
+
     // 调用Minimax API
-    const response = await fetch('https://api.minimax.chat/v1/tts', {
+    const response = await fetch('https://api.minimax.chat/v1/asr', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -31,34 +36,25 @@ export async function POST(request: NextRequest) {
         'X-GroupId': groupId
       },
       body: JSON.stringify({
-        model: 'speech-01-turbo',
-        text: text,
-        voice_id: voice,
-        speed: 1.0,
-        vol: 1.0,
-        audio_setting: 'hq'
+        audio: audioBase64,
+        model: 'whisper-1'
       })
     })
 
     if (!response.ok) {
       const errorText = await response.text()
       return NextResponse.json(
-        { error: `Minimax TTS请求失败: ${response.statusText} - ${errorText}` },
+        { error: `Minimax ASR请求失败: ${response.statusText} - ${errorText}` },
         { status: response.status }
       )
     }
 
-    const audioData = await response.arrayBuffer()
+    const result = await response.json()
     
-    return new NextResponse(audioData, {
-      headers: {
-        'Content-Type': 'audio/mpeg',
-        'Content-Length': audioData.byteLength.toString()
-      }
-    })
+    return NextResponse.json(result)
 
   } catch (error) {
-    console.error('TTS API错误:', error)
+    console.error('ASR API错误:', error)
     return NextResponse.json(
       { error: '服务器内部错误' },
       { status: 500 }

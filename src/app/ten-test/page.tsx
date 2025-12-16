@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { getTenClient } from '@/lib/ten-client'
+import { useState, useEffect, useRef } from 'react'
 
 export default function TenTest() {
   const [isConnected, setIsConnected] = useState(false)
@@ -10,18 +9,33 @@ export default function TenTest() {
   const [testText, setTestText] = useState('你好，这是测试语音合成的功能。')
   const [selectedVoice, setSelectedVoice] = useState('male-qn-jingying')
   const [isConnecting, setIsConnecting] = useState(false)
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [transcription, setTranscription] = useState('')
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    const client = getTenClient()
+    // 初始化音频上下文
+    const initAudio = async () => {
+      try {
+        const context = new (window.AudioContext || (window as any).webkitAudioContext)()
+        setAudioContext(context)
+      } catch (error) {
+        addLog(`音频上下文初始化失败: ${error}`)
+      }
+    }
 
-    // 监听连接状态
-    const checkConnection = setInterval(() => {
-      setIsConnected(client['isConnected'])
-    }, 1000)
+    initAudio()
 
     return () => {
-      clearInterval(checkConnection)
-      client.disconnect()
+      if (audioContext) {
+        audioContext.close()
+      }
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+      }
     }
   }, [])
 
@@ -32,54 +46,127 @@ export default function TenTest() {
   const handleStartRecording = async () => {
     try {
       addLog('开始录音...')
-      const client = getTenClient()
-      await client.startRecording()
       setIsRecording(true)
+      setRecordingTime(0)
+      audioChunksRef.current = []
+
+      // 请求麦克风权限
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      
+      // 创建MediaRecorder
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data)
+      }
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+        await handleAudioTranscription(audioBlob)
+      }
+
+      mediaRecorder.start()
       addLog('录音成功')
+
+      // 开始计时
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1)
+      }, 1000)
+
     } catch (error) {
-      addLog(`录音失败: ${error.message}`)
+      addLog(`录音失败: ${error}`)
+      setIsRecording(false)
     }
   }
 
   const handleStopRecording = async () => {
     try {
       addLog('停止录音...')
-      const client = getTenClient()
-      await client.stopRecording()
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop()
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+      }
       setIsRecording(false)
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
       addLog('录音已停止')
     } catch (error) {
-      addLog(`停止录音失败: ${error.message}`)
+      addLog(`停止录音失败: ${error}`)
+    }
+  }
+
+  const handleAudioTranscription = async (audioBlob: Blob) => {
+    try {
+      addLog('开始语音识别...')
+      
+      const formData = new FormData()
+      formData.append('audio', audioBlob, 'recording.wav')
+
+      const response = await fetch('/api/asr', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('ASR请求失败')
+      }
+
+      const result = await response.json()
+      setTranscription(result.text || result.answer || '识别结果为空')
+      addLog('语音识别成功')
+    } catch (error) {
+      addLog(`语音识别失败: ${error}`)
+      setTranscription('')
     }
   }
 
   const handleTestTTS = async () => {
     try {
       addLog(`测试TTS: ${testText}`)
-      const client = getTenClient()
-      await client.textToSpeech(testText, selectedVoice)
-      addLog('TTS播放成功')
-    } catch (error) {
-      addLog(`TTS失败: ${error.message}`)
-    }
-  }
+      
+      // 直接调用Minimax API
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: testText,
+          voice: selectedVoice,
+        }),
+      })
 
-  const handleInterrupt = () => {
-    const client = getTenClient()
-    client.interrupt()
-    addLog('发送打断信号')
+      if (!response.ok) {
+        throw new Error('TTS请求失败')
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      if (audioContext) {
+        const audioElement = new Audio(audioUrl)
+        audioElement.play()
+        addLog('TTS播放成功')
+      } else {
+        addLog('音频上下文未初始化')
+      }
+    } catch (error) {
+      addLog(`TTS失败: ${error}`)
+    }
   }
 
   const handleConnect = async () => {
     try {
       setIsConnecting(true)
-      addLog('正在连接到Ten服务器...')
-      const client = getTenClient()
-      await client.connect()
+      addLog('正在连接到Minimax服务...')
+      // 这里不需要连接，直接使用API
       setIsConnected(true)
-      addLog('✅ 已连接到Ten服务器')
+      addLog('✅ 已连接到Minimax服务')
     } catch (error) {
-      addLog(`❌ 连接失败: ${error.message}`)
+      addLog(`❌ 连接失败: ${error}`)
     } finally {
       setIsConnecting(false)
     }
@@ -88,27 +175,30 @@ export default function TenTest() {
   const handleDisconnect = async () => {
     try {
       addLog('正在断开连接...')
-      const client = getTenClient()
-      await client.disconnect()
       setIsConnected(false)
       addLog('已断开连接')
     } catch (error) {
-      addLog(`断开连接失败: ${error.message}`)
+      addLog(`断开连接失败: ${error}`)
     }
+  }
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
   }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        <h1 className="text-3xl font-bold mb-8">Ten框架测试页面</h1>
+        <h1 className="text-3xl font-bold mb-8">Minimax直接集成测试页面</h1>
 
         {/* 连接状态 */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">连接状态</h2>
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            <span>{isConnected ? '已连接到Ten服务器' : '未连接到Ten服务器'}</span>
-            <span className="text-gray-500 text-sm">(ws://124.220.31.71:3001)</span>
+            <span>{isConnected ? '已连接到Minimax服务' : '未连接到Minimax服务'}</span>
           </div>
           <div className="flex gap-4">
             <button
@@ -150,7 +240,13 @@ export default function TenTest() {
           {isRecording && (
             <div className="mt-4 flex items-center gap-2">
               <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
-              <span>正在录音...</span>
+              <span>正在录音... {formatTime(recordingTime)}</span>
+            </div>
+          )}
+          {transcription && (
+            <div className="mt-4 p-3 bg-gray-100 rounded-md">
+              <p className="text-sm text-gray-600">识别结果:</p>
+              <p className="mt-1">{transcription}</p>
             </div>
           )}
         </div>
@@ -190,12 +286,6 @@ export default function TenTest() {
               >
                 测试TTS
               </button>
-              <button
-                onClick={handleInterrupt}
-                className="px-6 py-3 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
-              >
-                打断播放
-              </button>
             </div>
           </div>
         </div>
@@ -224,10 +314,11 @@ export default function TenTest() {
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
           <h3 className="font-semibold text-blue-800 mb-2">说明：</h3>
           <ul className="text-blue-700 text-sm space-y-1">
-            <li>• 确保Ten服务器已经启动 (端口3001)</li>
+            <li>• 直接使用Minimax API，无需Ten中间层</li>
             <li>• 配置好Minimax API密钥</li>
             <li>• 允许浏览器访问麦克风</li>
             <li>• 可以同时测试录音和TTS功能</li>
+            <li>• 录音后会自动进行语音识别</li>
           </ul>
         </div>
       </div>
