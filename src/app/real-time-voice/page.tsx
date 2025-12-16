@@ -31,17 +31,20 @@ export default function RealTimeVoice() {
     }
   }, [])
 
-  // 连接Minimax
-  const connectMinimax = async () => {
+  // 连接Python后端
+  const connectBackend = async () => {
     try {
       setIsLoading(true)
       setError(null)
       
-      // 这里可以添加初始化Minimax连接的逻辑
-      // 例如：创建WebSocket连接或初始化会话
-      
-      setIsConnected(true)
-      setConversation([{ type: 'ai', text: '你好！我是你的AI助手，有什么可以帮助你的吗？' }])
+      // 测试后端连接
+      const healthResponse = await fetch('http://localhost:3000/health')
+      if (healthResponse.ok) {
+        setIsConnected(true)
+        setConversation([{ type: 'ai', text: '你好！我是你的AI助手，有什么可以帮助你的吗？' }])
+      } else {
+        throw new Error('后端服务连接失败')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '连接失败')
     } finally {
@@ -51,6 +54,11 @@ export default function RealTimeVoice() {
 
   // 开始录音
   const startRecording = async () => {
+    if (!isConnected) {
+      setError('请先连接到后端服务')
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       
@@ -153,6 +161,11 @@ export default function RealTimeVoice() {
 
   // 处理音频
   const processAudio = async (audioBlob: Blob) => {
+    if (!isConnected) {
+      setError('请先连接到后端服务')
+      return
+    }
+
     try {
       setIsLoading(true)
       setError(null)
@@ -164,8 +177,8 @@ export default function RealTimeVoice() {
         reader.readAsDataURL(audioBlob)
       })
       
-      // 调用ASR API
-      const response = await fetch('/api/asr', {
+      // 调用Python后端ASR API
+      const response = await fetch('http://localhost:3000/api/asr', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,8 +198,8 @@ export default function RealTimeVoice() {
       // 添加用户语音到对话
       setConversation(prev => [...prev, { type: 'user', text: recognizedText }])
       
-      // 调用TTS API生成AI回复
-      const ttsResponse = await fetch('/api/tts', {
+      // 调用Python后端TTS API生成AI回复
+      const ttsResponse = await fetch('http://localhost:3000/api/tts/websocket', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,8 +207,11 @@ export default function RealTimeVoice() {
         body: JSON.stringify({
           text: recognizedText,
           voice: 'female-qn-jingying',
-          emotion: 'neutral',
-          speed: 1.0
+          model: 'speech-02-turbo',
+          speed: 1.0,
+          volume: 1.0,
+          pitch: 0,
+          emotion: 'neutral'
         })
       })
       
@@ -207,7 +223,7 @@ export default function RealTimeVoice() {
       const audioUrl = URL.createObjectURL(audioBlobResponse)
       
       // 添加AI回复到对话
-      setConversation(prev => [...prev, { type: 'ai', text: recognizedText, audio: audioUrl }])
+      setConversation(prev => [...prev, { type: 'ai', text: '我理解了你的话：' + recognizedText, audio: audioUrl }])
       
       // 播放AI回复
       if (audioRef.current) {
@@ -249,11 +265,11 @@ export default function RealTimeVoice() {
         {!isConnected ? (
           <div className="bg-white rounded-lg shadow p-6">
             <button
-              onClick={connectMinimax}
+              onClick={connectBackend}
               disabled={isLoading}
               className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
-              {isLoading ? '连接中...' : '连接Minimax'}
+              {isLoading ? '连接中...' : '连接Python后端'}
             </button>
             
             {error && (
@@ -366,15 +382,13 @@ export default function RealTimeVoice() {
         <div className="mt-8 p-6 bg-yellow-50 border border-yellow-200 rounded-md">
           <h2 className="text-lg font-semibold text-yellow-800 mb-2">配置说明</h2>
           <p className="text-yellow-700 mb-2">
-            要使用这个实时语音通话功能，请在 <code className="bg-yellow-100 px-2 py-1 rounded">.env.local</code> 文件中配置：
+            要使用这个实时语音通话功能，请确保：
           </p>
-          <pre className="bg-yellow-100 p-3 rounded-md overflow-x-auto text-sm">
-{`MINIMAX_API_KEY=你的API密钥
-MINIMAX_GROUP_ID=你的GroupID`}
-          </pre>
-          <p className="text-yellow-700 mt-2 text-sm">
-            API密钥和Group ID可以在 <a href="https://api.minimax.chat" target="_blank" rel="noopener noreferrer" className="underline">Minimax 控制台</a> 获取。
-          </p>
+          <ul className="text-yellow-700 text-sm space-y-1">
+            <li>• Python后端服务运行在 localhost:3000</li>
+            <li>• 在服务器环境变量中配置 Minimax API 密钥和 Group ID</li>
+            <li>• 允许浏览器访问麦克风</li>
+          </ul>
         </div>
       </div>
     </div>

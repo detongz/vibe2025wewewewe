@@ -105,7 +105,7 @@ export default function TenTest() {
       const formData = new FormData()
       formData.append('audio', audioBlob, 'recording.wav')
 
-      const response = await fetch('/api/asr', {
+      const response = await fetch('http://localhost:3000/api/asr', {
         method: 'POST',
         body: formData,
       })
@@ -127,8 +127,8 @@ export default function TenTest() {
     try {
       addLog(`测试TTS: ${testText}`)
       
-      // 直接调用Minimax API
-      const response = await fetch('/api/tts', {
+      // 调用Python后端API
+      const response = await fetch('http://localhost:3000/api/tts/websocket', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,6 +136,11 @@ export default function TenTest() {
         body: JSON.stringify({
           text: testText,
           voice: selectedVoice,
+          model: 'speech-02-turbo',
+          speed: 1.0,
+          volume: 1.0,
+          pitch: 0,
+          emotion: 'neutral'
         }),
       })
 
@@ -161,10 +166,16 @@ export default function TenTest() {
   const handleConnect = async () => {
     try {
       setIsConnecting(true)
-      addLog('正在连接到Minimax服务...')
-      // 这里不需要连接，直接使用API
-      setIsConnected(true)
-      addLog('✅ 已连接到Minimax服务')
+      addLog('正在连接到Python后端服务...')
+      
+      // 测试后端连接
+      const healthResponse = await fetch('http://localhost:3000/health')
+      if (healthResponse.ok) {
+        setIsConnected(true)
+        addLog('✅ 已连接到Python后端服务')
+      } else {
+        throw new Error('后端服务连接失败')
+      }
     } catch (error) {
       addLog(`❌ 连接失败: ${error}`)
     } finally {
@@ -191,14 +202,14 @@ export default function TenTest() {
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-4xl mx-auto px-4">
-        <h1 className="text-3xl font-bold mb-8">Minimax直接集成测试页面</h1>
+        <h1 className="text-3xl font-bold mb-8">Python后端集成测试页面</h1>
 
         {/* 连接状态 */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">连接状态</h2>
           <div className="flex items-center gap-3 mb-4">
             <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
-            <span>{isConnected ? '已连接到Minimax服务' : '未连接到Minimax服务'}</span>
+            <span>{isConnected ? '已连接到Python后端服务' : '未连接到Python后端服务'}</span>
           </div>
           <div className="flex gap-4">
             <button
@@ -314,8 +325,9 @@ export default function TenTest() {
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
           <h3 className="font-semibold text-blue-800 mb-2">说明：</h3>
           <ul className="text-blue-700 text-sm space-y-1">
-            <li>• 直接使用Minimax API，无需Ten中间层</li>
-            <li>• 配置好Minimax API密钥</li>
+            <li>• 使用Python后端服务，通过WebSocket连接Minimax API</li>
+            <li>• 确保Python后端服务运行在localhost:3000</li>
+            <li>• 配置好Minimax API密钥在服务器环境变量中</li>
             <li>• 允许浏览器访问麦克风</li>
             <li>• 可以同时测试录音和TTS功能</li>
             <li>• 录音后会自动进行语音识别</li>
