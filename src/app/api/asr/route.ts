@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const audioFile = formData.get('audio') as File
+    const { audio } = await request.json()
 
-    if (!audioFile) {
+    if (!audio) {
       return NextResponse.json(
-        { error: '缺少音频文件' },
+        { error: '缺少音频数据' },
         { status: 400 }
       )
     }
@@ -23,10 +22,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 将音频文件转换为base64
-    const audioBuffer = await audioFile.arrayBuffer()
-    const audioBase64 = Buffer.from(audioBuffer).toString('base64')
-
     // 调用Minimax API
     const response = await fetch('https://api.minimax.chat/v1/asr', {
       method: 'POST',
@@ -36,7 +31,7 @@ export async function POST(request: NextRequest) {
         'X-GroupId': groupId
       },
       body: JSON.stringify({
-        audio: audioBase64,
+        audio: audio,
         model: 'whisper-1'
       })
     })
