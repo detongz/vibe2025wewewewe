@@ -815,6 +815,8 @@ async def chat_completions(
         # 流式响应
         async def generate_stream():
             try:
+                # 保存消息（在流式处理完成前）
+                save_message(session_id, "user", user_content)
                 # 获取流式生成器
                 stream_generator = await claude_agent_sdk.process_message(
                     user_content, session_id, stream=True
@@ -824,8 +826,6 @@ async def chat_completions(
                 async for chunk in stream_generator:
                     yield chunk
 
-                # 保存消息（在流式处理完成后）
-                save_message(session_id, "user", user_content)
                 # 注意：流式模式下，assistant消息会在客户端接收完整内容后保存
 
             except Exception as e:
@@ -858,13 +858,13 @@ async def chat_completions(
         )
 
     else:
+        # 保存消息
+        save_message(session_id, "user", user_content)
         # 非流式响应（原有逻辑）
         result = await claude_agent_sdk.process_message(
             user_content, session_id, stream=False
         )
 
-        # 保存消息
-        save_message(session_id, "user", user_content)
         save_message(
             session_id, "assistant", result["content"], result.get("tool_calls", [])
         )
