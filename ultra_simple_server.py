@@ -131,7 +131,7 @@ class PodcastGenerateRequest(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    username: str = "..."  # 用户名，必填参数
+    username: str  # 用户名，必填参数
 
 
 # 系统提示词 - 强制使用skill
@@ -364,7 +364,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="使用 podcasthelper skill 帮助用户产出播客",
+                system_prompt="使用播客编导 podcasthelper skill 帮助用户产出播客",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -454,6 +454,7 @@ class ClaudeAgentSDK:
                 "claude_session_id": None,
             }
 
+    # 流式处理，重要
     async def _stream_claude_agent(
         self, user_message: str, work_dir: str, our_session_id: str
     ) -> AsyncGenerator[str, None]:
@@ -479,7 +480,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="使用 podcasthelper skill 帮助用户产出播客",
+                system_prompt="使用播客编导podcasthelper skill 帮助用户产出播客",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -767,8 +768,6 @@ async def create_session(request: CreateSessionRequest):
 
         response = {
             "session_id": session_id,
-            "username": username,
-            "created_at": datetime.now().isoformat(),
         }
         print(f"✅ 返回响应: {response}")
         return response
@@ -974,37 +973,29 @@ async def health():
     return {"status": "healthy", "port": 3001}
 
 
-@app.post("/api/podcast/generate")
-async def generate_podcast(request: PodcastGenerateRequest):
-    """生成播客方案接口"""
-    try:
-        print(f"🎙️ 收到播客生成请求")
+# @app.post("/api/podcast/generate")
+# async def generate_podcast(request: PodcastGenerateRequest):
+#     """生成播客方案接口"""
+#     try:
+#         print(f"🎙️ 收到播客生成请求")
 
-        # 生成唯一的播客方案ID
-        podcast_id = f"plan-{uuid.uuid4().hex[:8]}"
-        created_at = int(datetime.now().timestamp())
+#         # 生成唯一的播客方案ID
+#         podcast_id = f"plan-{uuid.uuid4().hex[:8]}"
+#         created_at = int(datetime.now().timestamp())
 
-        # 构建上下文信息
-        context_info = _build_podcast_context(request)
+#         # 构建上下文信息
+#         context_info = _build_podcast_context(request)
 
-        # 使用Claude Agent SDK生成播客方案
-        podcast_plan = await _generate_podcast_with_claude(
-            request.wewecontent,
-            context_info,
-            podcast_id,
-            created_at,
-            request.session_id,
-        )
 
-        print(f"✅ 播客方案生成成功: {podcast_plan.title}")
-        return podcast_plan
+#         print(f"✅ 播客方案生成成功: {podcast_plan.title}")
+#         return podcast_plan
 
-    except Exception as e:
-        print(f"❌ 播客生成失败: {str(e)}")
-        import traceback
+#     except Exception as e:
+#         print(f"❌ 播客生成失败: {str(e)}")
+#         import traceback
 
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"播客生成失败: {str(e)}")
+#         traceback.print_exc()
+#         raise HTTPException(status_code=500, detail=f"播客生成失败: {str(e)}")
 
 
 def _build_podcast_context(request: PodcastGenerateRequest) -> str:
@@ -1043,33 +1034,6 @@ async def _generate_podcast_with_claude(
     # 创建临时会话用于播客生成
     work_dir = get_session_path(session_id=our_session_id)
     # TODO
-
-
-def _create_mock_podcast_data(prompt: str, context_info: str) -> dict:
-    """创建模拟的播客数据"""
-    return {
-        "title": f"故事: {prompt[:20]}...",
-        "summary": "一期由AI生成的播客节目，探讨了用户的想法并附带精彩点评。",
-        "tags": ["个人", "反思", "AI生成"],
-        "segments": [
-            {
-                "id": "seg-1",
-                "type": "ai_narration",
-                "content": "欢迎收听新的一期个人旅程。今天，我们来回顾一些有趣的想法。",
-            },
-            {
-                "id": "seg-2",
-                "type": "user_clip",
-                "content": "这是用户的精彩观点展示。",
-                "clipId": "clip-uuid-1234",
-            },
-            {
-                "id": "seg-3",
-                "type": "ai_narration",
-                "content": "这是一个非常独特的视角。让我们深入探讨这对你的日常生活意味着什么。",
-            },
-        ],
-    }
 
 
 if __name__ == "__main__":
