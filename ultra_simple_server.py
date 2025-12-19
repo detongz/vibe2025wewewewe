@@ -303,7 +303,7 @@ class ClaudeAgentSDK:
             captured_claude_session_id = None
 
             async for message in query(
-                prompt= "用户：" + user_message + "你的回复：", options=options
+                prompt="用户：" + user_message + "你的回复：", options=options
             ):
                 # 捕获系统初始化消息中的会话ID
                 if (
@@ -330,7 +330,7 @@ class ClaudeAgentSDK:
                             )
                 if isinstance(message, ResultMessage):
                     response_text += message.result
-                    save_message(our_session_id, "wewewe", message.text)
+                    save_message(our_session_id, "wewewe", message.result)
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
@@ -517,7 +517,7 @@ class ClaudeAgentSDK:
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                         response_text += block.text + "\n"
-                        save_message(our_session_id, "wewewe", message.text)
+                        save_message(our_session_id, "wewewe", message.result)
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
                             if isinstance(block, TextBlock):
