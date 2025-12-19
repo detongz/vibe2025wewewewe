@@ -579,7 +579,7 @@ class ClaudeAgentSDK:
                                 msg_res.split("<comfirm_generate>")[0]
                                 + msg_res.split("</comfirm_generate>")[1]
                             )
-                            yield f"data: {"comfirm_generate": true}"
+                            yield """data: {"comfirm_generate": true}"""
                         # 流式输出文本内容
                         chunk = {
                             "id": chat_id,
