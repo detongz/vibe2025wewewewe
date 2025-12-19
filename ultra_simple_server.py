@@ -144,26 +144,6 @@ def save_message(session_id: str, role: str, content: str, tool_calls=None):
         json.dump(context, f, ensure_ascii=False, indent=2)
 
 
-def update_claude_session_in_context(our_session_id: str, claude_session_id: str):
-    """更新会话上下文中的Claude会话ID"""
-    try:
-        session_path = get_session_path(our_session_id)
-        context_file = session_path / "context.json"
-
-        if context_file.exists():
-            with open(context_file, "r", encoding="utf-8") as f:
-                context = json.load(f)
-
-            context["claude_session_id"] = claude_session_id
-
-            with open(context_file, "w", encoding="utf-8") as f:
-                json.dump(context, f, ensure_ascii=False, indent=2)
-
-            print(f"📝 更新会话上下文中的Claude会话ID: {claude_session_id}")
-            return True
-    except Exception as e:
-        print(f"❌ 更新会话上下文失败: {str(e)}")
-        return False
 
 def update_claude_session_in_context(our_session_id: str, claude_session_id: str):
     """更新会话上下文中的Claude会话ID"""
@@ -195,6 +175,7 @@ def update_claude_session_in_context(our_session_id: str, claude_session_id: str
         print(f"❌ 更新会话上下文失败: {str(e)}")
         return False
 
+
 def load_claude_session_id(our_session_id: str) -> Optional[str]:
     """从持久化存储加载Claude会话ID"""
     try:
@@ -212,6 +193,7 @@ def load_claude_session_id(our_session_id: str) -> Optional[str]:
     except Exception as e:
         print(f"❌ 加载Claude会话ID失败: {str(e)}")
         return None
+
 
 # Claude Agent SDK集成
 class ClaudeAgentSDK:
@@ -344,7 +326,7 @@ class ClaudeAgentSDK:
                             self.claude_session_ids[our_session_id] = (
                                 captured_claude_session_id
                             )
-                            save_claude_session_id(
+                            update_claude_session_in_context(
                                 our_session_id, captured_claude_session_id
                             )
                 if isinstance(message, ResultMessage):
@@ -352,7 +334,7 @@ class ClaudeAgentSDK:
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
-                            response_text += f'<think>{block.text}</think>' + "\n"
+                            response_text += f"<think>{block.text}</think>" + "\n"
                         elif isinstance(block, ToolUseBlock):
                             tool_calls.append(
                                 {
@@ -394,7 +376,12 @@ class ClaudeAgentSDK:
         """使用Claude Agent SDK进行流式查询"""
         try:
             from claude_agent_sdk import query, ClaudeAgentOptions
-            from claude_agent_sdk.types import AssistantMessage, TextBlock, ToolUseBlock, ResultMessage
+            from claude_agent_sdk.types import (
+                AssistantMessage,
+                TextBlock,
+                ToolUseBlock,
+                ResultMessage,
+            )
 
             # 检查是否有保存的Claude会话ID
             claude_session_id = None
@@ -505,7 +492,7 @@ class ClaudeAgentSDK:
                             self.claude_session_ids[our_session_id] = (
                                 captured_claude_session_id
                             )
-                            save_claude_session_id(
+                            update_claude_session_in_context(
                                 our_session_id, captured_claude_session_id
                             )
 
@@ -540,7 +527,9 @@ class ClaudeAgentSDK:
                                     "choices": [
                                         {
                                             "index": 0,
-                                            "delta": {"content": f'<think>{block.text}</think>'},
+                                            "delta": {
+                                                "content": f"<think>{block.text}</think>"
+                                            },
                                             "finish_reason": None,
                                         }
                                     ],
@@ -845,7 +834,7 @@ async def resume_session(session_id: str, request: Dict[str, Any]):
         if claude_session_id:
             # 保存Claude会话ID
             claude_agent_sdk.claude_session_ids[session_id] = claude_session_id
-            save_claude_session_id(session_id, claude_session_id)
+            update_claude_session_in_context(session_id, claude_session_id)
             print(f"🔄 恢复会话: {session_id} 使用Claude会话ID: {claude_session_id}")
 
         return {
