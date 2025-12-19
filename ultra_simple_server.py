@@ -26,8 +26,8 @@ from pathlib import Path
 import subprocess
 import asyncio
 from fastapi.responses import JSONResponse, StreamingResponse
-from .claude_agent_sdk import claude_agent_sdk
-from .ultra_simple_server_paths import (
+from podcast_sdk import claude_agent_sdk_instance
+from ultra_simple_server_paths import (
     create_session_context,
     get_session_path,
     load_chat_history,
@@ -217,7 +217,7 @@ async def chat_completions(
                 # 保存消息（在流式处理完成前）
                 save_message(session_id, "user", user_content, sequence_id=sequence_id)
                 # 获取流式生成器
-                stream_generator = await claude_agent_sdk.process_message(
+                stream_generator = await claude_agent_sdk_instance.process_message(
                     user_content, session_id, stream=True
                 )
 
@@ -260,7 +260,7 @@ async def chat_completions(
         # 保存消息
         save_message(session_id, "user", user_content, sequence_id=sequence_id)
         # 非流式响应（原有逻辑）
-        result = await claude_agent_sdk.process_message(
+        result = await claude_agent_sdk_instance.process_message(
             user_content, session_id, stream=False
         )
 
@@ -322,7 +322,7 @@ async def resume_session(session_id: str, request: Dict[str, Any]):
         claude_session_id = request.get("claude_session_id")
         if claude_session_id:
             # 保存Claude会话ID
-            claude_agent_sdk.claude_session_ids[session_id] = claude_session_id
+            claude_agent_sdk_instance.claude_session_ids[session_id] = claude_session_id
             update_claude_session_in_context(session_id, claude_session_id)
             print(f"🔄 恢复会话: {session_id} 使用Claude会话ID: {claude_session_id}")
 
@@ -349,7 +349,7 @@ async def get_claude_session_id(session_id: str):
 
         claude_session_id = load_claude_session_id(session_id)
         if claude_session_id:
-            claude_agent_sdk.claude_session_ids[session_id] = claude_session_id
+            claude_agent_sdk_instance.claude_session_ids[session_id] = claude_session_id
 
         return {
             "session_id": session_id,
@@ -411,7 +411,7 @@ async def generate_podcast(request: PodcastGenerateRequest):
     async def generate_stream():
         try:
             # 获取流式生成器
-            stream_generator = await claude_agent_sdk.process_formated_mp3_data(
+            stream_generator = claude_agent_sdk_instance.process_formated_mp3_data(
                 session_id,
                 contexts,
             )
