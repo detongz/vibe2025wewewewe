@@ -806,6 +806,13 @@ async def chat_completions(
     if not user_content:
         raise HTTPException(status_code=400, detail="No user message found")
 
+    # 判断是不是要引导用户结束对话
+    context = load_chat_history(session_id).split("<confirm_generate>")
+    if context and len(context) > 10:
+        user_content += f"<notice>用户已经被AI认为{len(context)}次可以结束对话，请用<confirm_generate>是否现在生成故事？</confirm_generate>引导用户结束对话开始生成播客</notice>\n"
+        
+    # 判断是不是要进入后端处理生成
+
     # 3. 根据是否流式处理选择不同的响应方式
     if request.stream:
         # 流式响应
