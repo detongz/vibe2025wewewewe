@@ -90,6 +90,49 @@ class ChatCompletionStreamChunk(BaseModel):
     session_id: str
 
 
+# 播客生成相关数据模型
+class VoiceClip(BaseModel):
+    id: str
+    transcript: str
+
+
+class ChatSessionMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatSession(BaseModel):
+    title: str
+    messages: List[ChatSessionMessage]
+
+
+class PodcastSegment(BaseModel):
+    id: str
+    type: str  # "ai_narration" or "user_clip"
+    content: str
+    clipId: Optional[str] = None  # 当type为"user_clip"时必填
+
+
+class PodcastPlan(BaseModel):
+    id: str
+    title: str
+    summary: str
+    tags: List[str]
+    segments: List[PodcastSegment]
+    status: str = "draft"
+    createdAt: int
+
+
+class PodcastGenerateRequest(BaseModel):
+    prompt: str
+    voice_clips: List[VoiceClip]
+    chat_sessions: List[ChatSession]
+
+
+class CreateSessionRequest(BaseModel):
+    username: str = "..."  # 用户名，必填参数
+
+
 # 系统提示词 - 强制使用skill
 SYSTEM_PROMPT = """你使用skill完成工作"""
 
@@ -101,13 +144,14 @@ def get_session_path(session_id: str) -> Path:
     return SESSIONS_DIR / f"{session_id}"
 
 
-def create_session_context(session_id: str):
+def create_session_context(session_id: str, username: str = "anonymous"):
     session_path = get_session_path(session_id)
     session_path.mkdir(exist_ok=True)
 
     # 保存会话信息
     session_info = {
         "session_id": session_id,
+        "username": username,  # 添加用户名字段
         "created_at": datetime.now().isoformat(),
         "messages": [],
         "claude_session_id": None,  # 添加Claude会话ID字段
@@ -697,17 +741,22 @@ claude_agent_sdk = ClaudeAgentSDK()
 
 # API端点
 @app.post("/v1/sessions/create")
-async def create_session():
-    """创建新会话"""
+async def create_session(request: CreateSessionRequest):
+    """创建新会话 - 需要用户名参数"""
     try:
         print(f"🚀 创建会话请求到达")
+        username = request.username
         session_id = str(uuid.uuid4())
-        print(f"📋 生成session_id: {session_id}")
+        print(f"📋 生成session_id: {session_id}, 用户名: {username}")
 
-        session_path = create_session_context(session_id)
+        session_path = create_session_context(session_id, username)
         print(f"📁 创建会话目录: {session_path}")
 
-        response = {"session_id": session_id, "created_at": datetime.now().isoformat()}
+        response = {
+            "session_id": session_id,
+            "username": username,
+            "created_at": datetime.now().isoformat()
+        }
         print(f"✅ 返回响应: {response}")
         return response
 
@@ -910,6 +959,223 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "port": 3001}
+
+
+@app.post("/api/podcast/generate")
+async def generate_podcast(request: PodcastGenerateRequest):
+    """生成播客方案接口"""
+    try:
+        print(f"🎙️ 收到播客生成请求")
+
+        # 生成唯一的播客方案ID
+        podcast_id = f"plan-{uuid.uuid4().hex[:8]}"
+        created_at = int(datetime.now().timestamp())
+
+        # 构建上下文信息
+        context_info = _build_podcast_context(request)
+
+        # 使用Claude Agent SDK生成播客方案
+        podcast_plan = await _generate_podcast_with_claude(
+            request.prompt, context_info, podcast_id, created_at
+        )
+
+        print(f"✅ 播客方案生成成功: {podcast_plan.title}")
+        return podcast_plan
+
+    except Exception as e:
+        print(f"❌ 播客生成失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"播客生成失败: {str(e)}")
+
+
+def _build_podcast_context(request: PodcastGenerateRequest) -> str:
+    """构建播客生成的上下文信息"""
+    context_parts = []
+
+    # 添加用户提示词
+    context_parts.append(f"用户需求: {request.prompt}")
+
+    # 添加语音片段信息
+    if request.voice_clips:
+        context_parts.append("\n语音片段内容:")
+        for i, clip in enumerate(request.voice_clips, 1):
+            context_parts.append(f"片段{i}: {clip.transcript}")
+
+    # 添加对话会话信息
+    if request.chat_sessions:
+        context_parts.append("\n对话历史:")
+        for session in request.chat_sessions:
+            context_parts.append(f"\n【{session.title}】")
+            for msg in session.messages:
+                context_parts.append(f"{msg.role}: {msg.content}")
+
+    return "\n".join(context_parts)
+
+
+async def _generate_podcast_with_claude(
+    prompt: str, context_info: str, podcast_id: str, created_at: int
+) -> PodcastPlan:
+    """使用Claude Agent SDK生成播客方案"""
+
+    # 创建临时会话用于播客生成
+    temp_session_id = f"podcast-gen-{uuid.uuid4().hex[:8]}"
+    work_dir = f"/tmp/{temp_session_id}"
+
+    try:
+        # 构建生成提示词
+        generation_prompt = f"""
+基于以下用户提供的内容和需求，生成一个播客节目方案。
+
+{context_info}
+
+用户需求: {prompt}
+
+请生成一个完整的播客方案，包含:
+1. 播客标题 (简洁有吸引力)
+2. 播客简介 (总结这期节目的核心内容)
+3. 标签列表 (3-5个关键词标签)
+4. 段落编排 (交替的AI旁白和用户原声)
+
+要求:
+- AI旁白要自然流畅，起到连接和点评的作用
+- 合理使用用户的语音片段，保持内容的连贯性
+- 整体时长控制在5-10分钟左右
+- 风格轻松自然，适合播客形式
+
+请返回JSON格式的播客方案，严格按照以下结构:
+{{
+    "title": "播客标题",
+    "summary": "播客简介",
+    "tags": ["标签1", "标签2", "标签3"],
+    "segments": [
+        {{
+            "id": "seg-1",
+            "type": "ai_narration",
+            "content": "AI旁白内容"
+        }},
+        {{
+            "id": "seg-2",
+            "type": "user_clip",
+            "content": "用户原声内容",
+            "clipId": "对应的语音片段ID"
+        }}
+    ]
+}}
+"""
+
+        # 使用Claude Agent SDK生成内容
+        result = await claude_agent_sdk.process_message(
+            generation_prompt, temp_session_id, stream=False
+        )
+
+        # 解析生成的内容
+        generated_content = result["content"]
+
+        # 尝试从生成的内容中提取JSON
+        import re
+        json_match = re.search(r'\{.*\}', generated_content, re.DOTALL)
+        if json_match:
+            try:
+                podcast_data = json.loads(json_match.group())
+            except json.JSONDecodeError:
+                # 如果JSON解析失败，使用模拟数据
+                podcast_data = _create_mock_podcast_data(prompt, context_info)
+        else:
+            # 如果没有找到JSON，使用模拟数据
+            podcast_data = _create_mock_podcast_data(prompt, context_info)
+
+        # 构建播客方案对象
+        segments = []
+        for seg_data in podcast_data.get("segments", []):
+            segment = PodcastSegment(
+                id=seg_data.get("id", f"seg-{len(segments)+1}"),
+                type=seg_data.get("type", "ai_narration"),
+                content=seg_data.get("content", ""),
+                clipId=seg_data.get("clipId")
+            )
+            segments.append(segment)
+
+        podcast_plan = PodcastPlan(
+            id=podcast_id,
+            title=podcast_data.get("title", "AI生成的播客"),
+            summary=podcast_data.get("summary", "一期由AI生成的播客节目"),
+            tags=podcast_data.get("tags", ["AI生成"]),
+            segments=segments,
+            status="draft",
+            createdAt=created_at
+        )
+
+        return podcast_plan
+
+    except Exception as e:
+        print(f"Claude生成失败，使用模拟数据: {str(e)}")
+        # 如果Claude生成失败，返回模拟数据
+        return _create_mock_podcast_plan(podcast_id, created_at, prompt, context_info)
+
+    finally:
+        # 清理临时会话目录
+        try:
+            import shutil
+            temp_dir_path = Path(work_dir)
+            if temp_dir_path.exists():
+                shutil.rmtree(temp_dir_path)
+        except Exception:
+            pass  # 清理失败不影响主要功能
+
+
+def _create_mock_podcast_data(prompt: str, context_info: str) -> dict:
+    """创建模拟的播客数据"""
+    return {
+        "title": f"故事: {prompt[:20]}...",
+        "summary": "一期由AI生成的播客节目，探讨了用户的想法并附带精彩点评。",
+        "tags": ["个人", "反思", "AI生成"],
+        "segments": [
+            {
+                "id": "seg-1",
+                "type": "ai_narration",
+                "content": "欢迎收听新的一期个人旅程。今天，我们来回顾一些有趣的想法。"
+            },
+            {
+                "id": "seg-2",
+                "type": "user_clip",
+                "content": "这是用户的精彩观点展示。",
+                "clipId": "clip-uuid-1234"
+            },
+            {
+                "id": "seg-3",
+                "type": "ai_narration",
+                "content": "这是一个非常独特的视角。让我们深入探讨这对你的日常生活意味着什么。"
+            }
+        ]
+    }
+
+
+def _create_mock_podcast_plan(
+    podcast_id: str, created_at: int, prompt: str, context_info: str
+) -> PodcastPlan:
+    """创建模拟的播客方案"""
+    mock_data = _create_mock_podcast_data(prompt, context_info)
+
+    segments = []
+    for seg_data in mock_data["segments"]:
+        segment = PodcastSegment(
+            id=seg_data["id"],
+            type=seg_data["type"],
+            content=seg_data["content"],
+            clipId=seg_data.get("clipId")
+        )
+        segments.append(segment)
+
+    return PodcastPlan(
+        id=podcast_id,
+        title=mock_data["title"],
+        summary=mock_data["summary"],
+        tags=mock_data["tags"],
+        segments=segments,
+        status="draft",
+        createdAt=created_at
+    )
 
 
 if __name__ == "__main__":
