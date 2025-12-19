@@ -226,6 +226,7 @@ class ClaudeAgentSDK:
                 prompt="请根据素材列表生成播客脚本，严格按照JSON Lines格式输出，每行一个完整的JSON对象。",
                 options=options,
             ):
+                print('msg:',message)
                 if isinstance(message, ResultMessage):
                     content = message.result
                     if content:
