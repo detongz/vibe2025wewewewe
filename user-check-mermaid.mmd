@@ -1,0 +1,25 @@
+graph TD
+    A[用户输入用户名] --> B[生成Device ID]
+    B --> C[创建会话 sessionid]
+    C --> D[用户语音输入]
+    D --> E[编导判断是否适合结束]
+    E -->|不适合| F[继续对话]
+    E -->|适合| G[AI返回确认XML<br/>是否现在生成故事?]
+    G --> H[前端显示两个按钮:<br/>1. 是的<br/>2. 再聊聊]
+    H --> I{用户选择}
+    I -->|再聊聊| F
+    I -->|是的| J[后端处理生成]
+    F --> K[编导继续对话]
+    K --> E
+    J --> L[返回编排文本]
+    J --> M[返回JSON数据]
+    L --> N[前端展示]
+    M --> O[生成MP3]
+    O --> P[保存结果]
+    P --> Q[我的生成页面查看]
+
+    style G fill:#FFE4B5,stroke:#333
+    style H fill:#FFE4B5,stroke:#333
+    style J fill:#98FB98,stroke:#333
+    style L fill:#87CEEB,stroke:#333
+    style M fill:#87CEEB,stroke:#333
