@@ -244,3 +244,5 @@ Thumbs.db
 .Trashes
 ehthumbs.db
 Thumbs.db.env.local
+.swp
+.swo
