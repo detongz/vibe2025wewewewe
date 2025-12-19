@@ -412,7 +412,7 @@ class ClaudeAgentSDK:
                             )
                 if isinstance(message, ResultMessage):
                     response_text += message.result
-                    save_message(our_session_id, "wewewe", message.result)
+                    save_message(our_session_id, "assistant", message.result)
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
@@ -522,36 +522,21 @@ class ClaudeAgentSDK:
             full_response = "<think>娓娓转圈圈</think>"
 
             # 将响应分成多个chunk来模拟流式输出
-            words = full_response.split()
-            current_chunk = ""
-
-            for i, word in enumerate(words):
-                current_chunk += word + " "
-
-                # 每3个单词发送一个chunk，或者最后一个单词
-                if (i + 1) % 3 == 0 or i == len(words) - 1:
-                    chunk = {
-                        "id": chat_id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": "kimi-for-podcast",
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": {"content": current_chunk.strip()},
-                                "finish_reason": None,
-                            }
-                        ],
-                        "session_id": our_session_id,
+            chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": "kimi-for-podcast",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": full_response},
+                        "finish_reason": None,
                     }
-                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-
-                    # 添加小延迟来模拟真实的流式响应
-                    await asyncio.sleep(0.1)
-
-                    response_text += current_chunk
-                    current_chunk = ""
-                    chunk_count += 1
+                ],
+                "session_id": our_session_id,
+            }
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
             # 尝试使用真实的SDK进行查询（如果可用）
             try:
@@ -584,6 +569,17 @@ class ClaudeAgentSDK:
                             )
 
                     if isinstance(message, ResultMessage):
+                        # 判断comfirm_generate是不是在message.result里
+                        msg_res = message.result
+                        if (
+                            "<comfirm_generate>" in message.result
+                            and "</comfirm_generate>" in message.result
+                        ):
+                            msg_res = (
+                                msg_res.split("<comfirm_generate>")[0]
+                                + msg_res.split("</comfirm_generate>")[1]
+                            )
+                            yield f"data: {"comfirm_generate": true}"
                         # 流式输出文本内容
                         chunk = {
                             "id": chat_id,
@@ -593,7 +589,7 @@ class ClaudeAgentSDK:
                             "choices": [
                                 {
                                     "index": 0,
-                                    "delta": {"content": message.result},
+                                    "delta": {"content": msg_res},
                                     "finish_reason": None,
                                 }
                             ],
@@ -601,7 +597,7 @@ class ClaudeAgentSDK:
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                         response_text += block.text + "\n"
-                        save_message(our_session_id, "wewewe", message.result)
+                        save_message(our_session_id, "assistant", message.result)
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
                             if isinstance(block, TextBlock):
