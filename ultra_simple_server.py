@@ -286,7 +286,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="你在和用户做播客访谈，使用podcast-editor skill",
+                system_prompt="你在和用户做播客访谈，使用podcasthelper skill",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -397,7 +397,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="你在和用户做播客访谈，使用podcast-editor skill",
+                system_prompt="你在和用户做播客访谈，使用podcasthelper skill",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -473,7 +473,7 @@ class ClaudeAgentSDK:
             # 尝试使用真实的SDK进行查询（如果可用）
             try:
                 async for message in query(
-                    prompt="你用podcast-editor skill帮助用户做自己的播客，用户："
+                    prompt="你用 podcasthelper skill帮助用户做自己的播客，用户："
                     + user_message
                     + "你的回复：",
                     options=options,
