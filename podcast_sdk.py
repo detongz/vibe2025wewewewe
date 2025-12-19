@@ -68,6 +68,62 @@ class ClaudeAgentSDK:
             {}
         )  # 存储Claude会话ID映射：our_session_id -> claude_session_id
 
+    def _process_json_line(self, line: str, content_to_clip_map: dict, user_clips: list) -> Optional[dict]:
+        """
+        处理单行JSON，进行数据清洗和校验
+
+        Args:
+            line: JSON字符串
+            content_to_clip_map: 内容到clip的映射
+            user_clips: 用户clip列表
+
+        Returns:
+            处理后的数据对象，如果解析失败返回None
+        """
+        try:
+            data_obj = json.loads(line)
+
+            # 数据清洗和校验
+            if data_obj.get("type") == "user":
+                user_text = data_obj.get("text", "")
+
+                # 确保用户片段有audio字段
+                if "audio" not in data_obj:
+                    # 优先精确匹配
+                    if user_text in content_to_clip_map:
+                        data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
+                    else:
+                        # 尝试模糊匹配（去除空格和换行）
+                        user_text_clean = user_text.replace(" ", "").replace("\n", "")
+                        for clip_content, clip_info in content_to_clip_map.items():
+                            clip_content_clean = clip_content.replace(" ", "").replace("\n", "")
+                            if user_text_clean == clip_content_clean:
+                                data_obj["audio"] = clip_info["clipId"]
+                                # 使用原始clip内容确保一致性
+                                data_obj["text"] = clip_content
+                                break
+                        else:
+                            # 如果找不到匹配，使用第一个可用的clipId
+                            if user_clips:
+                                data_obj["audio"] = user_clips[0]["clipId"]
+
+                # 最终验证：确保audio字段存在
+                if "audio" not in data_obj and user_clips:
+                    data_obj["audio"] = user_clips[0]["clipId"]
+
+            return data_obj
+
+        except json.JSONDecodeError:
+            return None
+
+    def _should_skip_line(self, line: str) -> bool:
+        """判断是否应该跳过该行"""
+        if not line.strip():
+            return True
+        # 跳过markdown标记和数组符号
+        skip_prefixes = ["```", "```json", "[", "]"]
+        return any(line.startswith(prefix) for prefix in skip_prefixes)
+
     async def process_formated_mp3_data(self, session_id: str, contexts: List[Dict[str, Any]]):
         """
         处理格式化的MP3数据，生成播客脚本
@@ -83,24 +139,23 @@ class ClaudeAgentSDK:
 
             # 数据预处理：提取用户素材并转换为所需格式
             user_clips = []
-            content_to_clip_map = {}  # 内容到clip信息的映射
+            content_to_clip_map = {}
 
             for ctx in contexts:
                 if ctx.get("role") == "user" and ctx.get("content"):
                     content = ctx.get("content", "").strip()
                     sequence_id = ctx.get("sequence_id", "")
 
-                    if content:  # 确保内容不为空
+                    if content:
                         clip_data = {
                             "id": sequence_id,
                             "content": content,
-                            "clipId": sequence_id  # 使用sequence_id作为clipId
+                            "clipId": sequence_id
                         }
                         user_clips.append(clip_data)
                         content_to_clip_map[content] = clip_data
 
             if not user_clips:
-                # 如果没有用户素材，返回错误
                 error_data = {
                     "type": "error",
                     "text": "没有找到有效的用户录音素材，无法生成播客脚本"
@@ -109,7 +164,7 @@ class ClaudeAgentSDK:
                 yield "data: [DONE]\n\n"
                 return
 
-            # 简化的系统提示词
+            # 系统提示词
             SYSTEM_PROMPT = """使用podcast-editor skill
 
 用户原声素材列表：
@@ -129,7 +184,6 @@ class ClaudeAgentSDK:
             from claude_agent_sdk.types import (
                 AssistantMessage,
                 TextBlock,
-                ToolUseBlock,
                 ResultMessage,
             )
 
@@ -143,7 +197,29 @@ class ClaudeAgentSDK:
 
             # 用于缓冲LLM输出的内容
             buffer = ""
-            line_count = 0
+
+            # 统一的流式处理函数
+            def process_content(content: str):
+                """统一处理内容，提取并输出JSON Lines"""
+                nonlocal buffer
+                buffer += content
+
+                # 按行分割处理
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+
+                    if self._should_skip_line(line):
+                        continue
+
+                    # 尝试解析JSON
+                    data_obj = self._process_json_line(line, content_to_clip_map, user_clips)
+                    if data_obj:
+                        yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
+                    else:
+                        # JSON解析失败，可能是行不完整，放回缓冲区
+                        buffer = line + "\n" + buffer
+                        break
 
             # 流式处理LLM响应
             async for message in query(
@@ -151,150 +227,26 @@ class ClaudeAgentSDK:
                 options=options,
             ):
                 if isinstance(message, ResultMessage):
-                    # 获取LLM生成的文本内容
                     content = message.result
-                    if not content:
-                        continue
-
-                    # 将新内容添加到缓冲区
-                    buffer += content
-
-                    # 尝试按行分割处理
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        line = line.strip()
-                        line_count += 1
-
-                        if not line:
-                            continue
-
-                        # 跳过可能的markdown标记
-                        if line.startswith("```") or line.startswith("```json") or line.startswith("[") or line.startswith("]"):
-                            continue
-
-                        try:
-                            # 尝试解析JSON
-                            data_obj = json.loads(line)
-
-                            # 数据清洗和校验
-                            if data_obj.get("type") == "user":
-                                user_text = data_obj.get("text", "")
-
-                                # 确保用户片段有audio字段
-                                if "audio" not in data_obj:
-                                    # 根据内容查找对应的clipId
-                                    if user_text in content_to_clip_map:
-                                        data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
-                                    else:
-                                        # 尝试模糊匹配（处理可能的标点差异）
-                                        for clip_content, clip_info in content_to_clip_map.items():
-                                            if user_text.replace(" ", "").replace("\n", "") == clip_content.replace(" ", "").replace("\n", ""):
-                                                data_obj["audio"] = clip_info["clipId"]
-                                                # 强制使用原始内容
-                                                data_obj["text"] = clip_content
-                                                break
-                                        else:
-                                            # 如果找不到匹配，使用第一个可用的clipId
-                                            if user_clips:
-                                                data_obj["audio"] = user_clips[0]["clipId"]
-
-                                # 最终验证：确保audio字段存在
-                                if "audio" not in data_obj and user_clips:
-                                    data_obj["audio"] = user_clips[0]["clipId"]
-
-                            # 输出为前端期望的SSE格式
-                            yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
-
-                        except json.JSONDecodeError:
-                            # 如果JSON解析失败，可能是行不完整，放回缓冲区等待下一次
-                            buffer = line + "\n" + buffer
-                            line_count -= 1
-                            continue
+                    if content:
+                        for output in process_content(content):
+                            yield output
 
                 elif isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
-                            # 处理文本块
                             content = block.text
-                            if not content:
-                                continue
-
-                            buffer += content
-
-                            # 尝试按行分割处理
-                            while "\n" in buffer:
-                                line, buffer = buffer.split("\n", 1)
-                                line = line.strip()
-                                line_count += 1
-
-                                if not line:
-                                    continue
-
-                                # 跳过可能的markdown标记
-                                if line.startswith("```") or line.startswith("```json") or line.startswith("[") or line.startswith("]"):
-                                    continue
-
-                                try:
-                                    data_obj = json.loads(line)
-
-                                    # 数据清洗和校验（同上）
-                                    if data_obj.get("type") == "user":
-                                        user_text = data_obj.get("text", "")
-
-                                        if "audio" not in data_obj:
-                                            if user_text in content_to_clip_map:
-                                                data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
-                                            else:
-                                                for clip_content, clip_info in content_to_clip_map.items():
-                                                    if user_text.replace(" ", "").replace("\n", "") == clip_content.replace(" ", "").replace("\n", ""):
-                                                        data_obj["audio"] = clip_info["clipId"]
-                                                        data_obj["text"] = clip_content
-                                                        break
-                                                else:
-                                                    if user_clips:
-                                                        data_obj["audio"] = user_clips[0]["clipId"]
-
-                                        if "audio" not in data_obj and user_clips:
-                                            data_obj["audio"] = user_clips[0]["clipId"]
-
-                                    yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
-
-                                except json.JSONDecodeError:
-                                    buffer = line + "\n" + buffer
-                                    line_count -= 1
-                                    continue
+                            if content:
+                                for output in process_content(content):
+                                    yield output
 
             # 处理缓冲区中剩余的内容
             if buffer.strip():
-                try:
-                    # 尝试解析最后一行
-                    last_line = buffer.strip()
-                    if not (last_line.startswith("```") or last_line.startswith("```json") or last_line.startswith("[") or last_line.startswith("]")):
-                        data_obj = json.loads(last_line)
-
-                        if data_obj.get("type") == "user":
-                            user_text = data_obj.get("text", "")
-
-                            if "audio" not in data_obj:
-                                if user_text in content_to_clip_map:
-                                    data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
-                                else:
-                                    for clip_content, clip_info in content_to_clip_map.items():
-                                        if user_text.replace(" ", "").replace("\n", "") == clip_content.replace(" ", "").replace("\n", ""):
-                                            data_obj["audio"] = clip_info["clipId"]
-                                            data_obj["text"] = clip_content
-                                            break
-                                    else:
-                                        if user_clips:
-                                            data_obj["audio"] = user_clips[0]["clipId"]
-
-                            if "audio" not in data_obj and user_clips:
-                                data_obj["audio"] = user_clips[0]["clipId"]
-
-                        yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
-
-                except json.JSONDecodeError:
-                    # 如果最后还是有无法解析的内容，作为警告处理
+                data_obj = self._process_json_line(buffer.strip(), content_to_clip_map, user_clips)
+                if data_obj:
+                    yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
+                elif buffer.strip():
+                    # 无法解析的内容作为警告
                     warning_data = {
                         "type": "warning",
                         "text": f"生成内容中有部分无法解析: {buffer.strip()[:100]}..."
@@ -305,7 +257,6 @@ class ClaudeAgentSDK:
             yield "data: [DONE]\n\n"
 
         except Exception as e:
-            # 错误处理
             import traceback
             error_msg = f"处理播客脚本生成时出错: {str(e)}"
             print(f"❌ {error_msg}")
