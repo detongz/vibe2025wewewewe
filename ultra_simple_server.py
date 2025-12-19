@@ -144,7 +144,6 @@ def save_message(session_id: str, role: str, content: str, tool_calls=None):
         json.dump(context, f, ensure_ascii=False, indent=2)
 
 
-
 def update_claude_session_in_context(our_session_id: str, claude_session_id: str):
     """更新会话上下文中的Claude会话ID"""
     try:
@@ -181,14 +180,14 @@ def load_claude_session_id(our_session_id: str) -> Optional[str]:
     try:
         # Use the same path approach as other functions
         session_path = get_session_path(our_session_id)
-        session_id_file = session_path / "claude_session.txt"
-        if session_id_file.exists():
-            with open(session_id_file, "r", encoding="utf-8") as f:
-                claude_session_id = f.read().strip()
-            print(
-                f"📖 加载Claude会话ID: {claude_session_id} 对应我们的会话: {our_session_id}"
-            )
-            return claude_session_id
+        session_path.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+        context_file = session_path / "context.json"
+
+        if context_file.exists():
+            with open(context_file, "r", encoding="utf-8") as f:
+                context = json.load(f)
+                if "claude_session_id" in context:
+                    return context["claude_session_id"]
         return None
     except Exception as e:
         print(f"❌ 加载Claude会话ID失败: {str(e)}")
@@ -304,7 +303,7 @@ class ClaudeAgentSDK:
             captured_claude_session_id = None
 
             async for message in query(
-                prompt="用户：" + user_message + "你的回复：", options=options
+                prompt= "用户：" + user_message + "你的回复：", options=options
             ):
                 # 捕获系统初始化消息中的会话ID
                 if (
@@ -331,6 +330,7 @@ class ClaudeAgentSDK:
                             )
                 if isinstance(message, ResultMessage):
                     response_text += message.result
+                    save_message(our_session_id, "wewewe", message.text)
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
@@ -363,7 +363,9 @@ class ClaudeAgentSDK:
 
         except Exception as e:
             # 如果SDK调用失败，返回模拟响应
-            mock_response = f"我理解您的需求：{user_message}。我将使用播客-editor skill来帮助您制作播客。[SDK调用失败: {str(e)}]"
+            mock_response = (
+                f"我理解您的需求。我让娓娓来帮助您制作播客。[SDK调用失败: {str(e)}]"
+            )
             return {
                 "content": mock_response,
                 "tool_calls": [self._create_default_tool_call(user_message)],
@@ -434,7 +436,7 @@ class ClaudeAgentSDK:
             captured_claude_session_id = None
 
             # 模拟流式响应 - 将完整响应分成多个chunk
-            full_response = f"我理解您的需求：{user_message}。我将使用播客-editor skill来帮助您制作播客。"
+            full_response = "<think>娓娓转圈圈</think>"
 
             # 将响应分成多个chunk来模拟流式输出
             words = full_response.split()
@@ -472,7 +474,8 @@ class ClaudeAgentSDK:
             try:
                 async for message in query(
                     prompt="你用podcast-editor skill帮助用户做自己的播客，用户："
-                    + user_message,
+                    + user_message
+                    + "你的回复：",
                     options=options,
                 ):
                     print("msg::", message)
@@ -514,7 +517,7 @@ class ClaudeAgentSDK:
                         }
                         yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
                         response_text += block.text + "\n"
-                        await asyncio.sleep(0.05)  # 小延迟
+                        save_message(our_session_id, "wewewe", message.text)
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
                             if isinstance(block, TextBlock):
