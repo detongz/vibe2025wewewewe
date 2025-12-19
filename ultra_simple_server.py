@@ -194,6 +194,27 @@ def load_claude_session_id(our_session_id: str) -> Optional[str]:
         return None
 
 
+def load_chat_history(our_session_id: str) -> Optional[str]:
+    """从持久化存储加载Claude会话ID"""
+    try:
+        # Use the same path approach as other functions
+        session_path = get_session_path(our_session_id)
+        session_path.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+        context_file = session_path / "context.json"
+
+        context_msgs = []
+        if context_file.exists():
+            with open(context_file, "r", encoding="utf-8") as f:
+                context = json.load(f)
+                for msg in context.get("messages"):
+                    context_msgs.append(f"{msg.get('role')}: {msg.get('content')}")
+                return "\n".join(context_msgs) + "\n"
+        return None
+    except Exception as e:
+        print(f"❌ 加载Claude会话ID失败: {str(e)}")
+        return None
+
+
 # Claude Agent SDK集成
 class ClaudeAgentSDK:
     """Claude Agent SDK Python实现"""
@@ -286,7 +307,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="你在和用户做播客访谈，使用podcasthelper skill",
+                system_prompt="使用 podcasthelper skill 帮助用户产出播客",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -303,7 +324,11 @@ class ClaudeAgentSDK:
             captured_claude_session_id = None
 
             async for message in query(
-                prompt="用户：" + user_message + "你的回复：", options=options
+                prompt=load_chat_history(our_session_id)
+                + "用户："
+                + user_message
+                + "你的回复：",
+                options=options,
             ):
                 # 捕获系统初始化消息中的会话ID
                 if (
@@ -397,7 +422,7 @@ class ClaudeAgentSDK:
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="你在和用户做播客访谈，使用podcasthelper skill",
+                system_prompt="使用 podcasthelper skill 帮助用户产出播客",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
                 cwd=work_dir,
@@ -473,7 +498,8 @@ class ClaudeAgentSDK:
             # 尝试使用真实的SDK进行查询（如果可用）
             try:
                 async for message in query(
-                    prompt="你用 podcasthelper skill帮助用户做自己的播客，用户："
+                    prompt=load_chat_history(our_session_id)
+                    + "用户："
                     + user_message
                     + "你的回复：",
                     options=options,
