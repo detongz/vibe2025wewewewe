@@ -5,18 +5,24 @@
 使用Claude Agent SDK Python实现
 """
 
+import sys
+import os
+# 添加虚拟环境路径
+venv_path = os.path.join(os.path.dirname(__file__), 'venv', 'lib', 'python3.11', 'site-packages')
+if os.path.exists(venv_path):
+    sys.path.insert(0, venv_path)
+
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, AsyncGenerator
 import json
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
 import subprocess
 import asyncio
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI(title="Podcast Server", version="1.0.0")
 
@@ -55,6 +61,7 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     max_tokens: Optional[int] = 1024
     temperature: Optional[float] = 0.7
+    stream: Optional[bool] = False
 
 class ChatResponse(BaseModel):
     id: str
@@ -65,6 +72,14 @@ class ChatResponse(BaseModel):
     usage: Dict[str, int]
     session_id: str
 
+class ChatCompletionStreamChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: List[Dict[str, Any]]
+    session_id: str
+
 # 系统提示词 - 强制使用skill
 SYSTEM_PROMPT = """你使用skill完成工作"""
 
@@ -72,7 +87,7 @@ SYSTEM_PROMPT = """你使用skill完成工作"""
 SESSIONS_DIR = Path("/tmp")
 
 def get_session_path(session_id: str) -> Path:
-    return SESSIONS_DIR / f"session_{session_id}"
+    return SESSIONS_DIR / f"{session_id}"
 
 def create_session_context(session_id: str):
     session_path = get_session_path(session_id)
@@ -82,7 +97,8 @@ def create_session_context(session_id: str):
     session_info = {
         "session_id": session_id,
         "created_at": datetime.now().isoformat(),
-        "messages": []
+        "messages": [],
+        "claude_session_id": None  # 添加Claude会话ID字段
     }
 
     with open(session_path / "context.json", "w", encoding="utf-8") as f:
@@ -114,57 +130,164 @@ def save_message(session_id: str, role: str, content: str, tool_calls=None):
     with open(context_file, "w", encoding="utf-8") as f:
         json.dump(context, f, ensure_ascii=False, indent=2)
 
+def update_claude_session_in_context(our_session_id: str, claude_session_id: str):
+    """更新会话上下文中的Claude会话ID"""
+    try:
+        session_path = get_session_path(our_session_id)
+        context_file = session_path / "context.json"
+
+        if context_file.exists():
+            with open(context_file, "r", encoding="utf-8") as f:
+                context = json.load(f)
+
+            context["claude_session_id"] = claude_session_id
+
+            with open(context_file, "w", encoding="utf-8") as f:
+                json.dump(context, f, ensure_ascii=False, indent=2)
+
+            print(f"📝 更新会话上下文中的Claude会话ID: {claude_session_id}")
+            return True
+    except Exception as e:
+        print(f"❌ 更新会话上下文失败: {str(e)}")
+        return False
+
+def save_claude_session_id(our_session_id: str, claude_session_id: str):
+    """保存Claude会话ID到持久化存储"""
+    try:
+        # 创建会话ID存储目录
+        session_storage_dir = Path(f"/tmp/{our-session-id-path}")
+        session_storage_dir.mkdir(parents=True, exist_ok=True)
+
+        # 保存Claude会话ID
+        session_id_file = session_storage_dir / f"claude_session.txt"
+        with open(session_id_file, "w", encoding="utf-8") as f:
+            f.write(claude_session_id)
+
+        # 同时更新会话上下文
+        update_claude_session_in_context(our_session_id, claude_session_id)
+
+        print(f"💾 保存Claude会话ID: {claude_session_id} 对应我们的会话: {our_session_id}")
+        return True
+    except Exception as e:
+        print(f"❌ 保存Claude会话ID失败: {str(e)}")
+        return False
+
+def load_claude_session_id(our_session_id: str) -> Optional[str]:
+    """从持久化存储加载Claude会话ID"""
+    try:
+        session_id_file = Path(f"/tmp/{our_session_id}/claude_session.txt")
+        if session_id_file.exists():
+            with open(session_id_file, "r", encoding="utf-8") as f:
+                claude_session_id = f.read().strip()
+            print(f"📖 加载Claude会话ID: {claude_session_id} 对应我们的会话: {our_session_id}")
+            return claude_session_id
+        return None
+    except Exception as e:
+        print(f"❌ 加载Claude会话ID失败: {str(e)}")
+        return None
+
 # Claude Agent SDK集成
 class ClaudeAgentSDK:
     """Claude Agent SDK Python实现"""
 
     def __init__(self):
         self.work_dir = None
+        self.claude_session_ids = {}  # 存储Claude会话ID映射：our_session_id -> claude_session_id
 
-    async def process_message(self, user_message: str, session_id: str) -> Dict[str, Any]:
+    async def process_message(self, user_message: str, session_id: str, stream: bool = False) -> Union[Dict[str, Any], AsyncGenerator[str, None]]:
         """使用Claude Agent SDK处理消息"""
         try:
             # 设置工作目录为 /tmp/{session_id}
             work_dir = Path(f"/tmp/{session_id}")
             work_dir.mkdir(parents=True, exist_ok=True)
 
-            # 使用claude-agent-sdk处理消息
-            result = await self._query_claude_agent(user_message, str(work_dir))
-
-            return {
-                "content": result["content"],
-                "tool_calls": result["tool_calls"],
-                "success": True
-            }
+            if stream:
+                # 流式处理模式
+                return self._stream_claude_agent(user_message, str(work_dir), session_id)
+            else:
+                # 非流式处理模式
+                result = await self._query_claude_agent(user_message, str(work_dir), session_id)
+                return {
+                    "content": result["content"],
+                    "tool_calls": result["tool_calls"],
+                    "success": True,
+                    "claude_session_id": result.get("claude_session_id")
+                }
 
         except Exception as e:
-            return {
-                "content": f"处理消息时出错: {str(e)}",
-                "tool_calls": [self._create_default_tool_call(user_message)],
-                "success": False
-            }
+            if stream:
+                # 流式模式下的错误处理
+                async def error_stream():
+                    error_chunk = {
+                        "id": f"chatcmpl-{int(datetime.now().timestamp())}",
+                        "object": "chat.completion.chunk",
+                        "created": int(datetime.now().timestamp()),
+                        "model": "kimi-k2-turbo-preview",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": f"处理消息时出错: {str(e)}"},
+                            "finish_reason": None
+                        }],
+                        "session_id": session_id
+                    }
+                    yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                return error_stream()
+            else:
+                return {
+                    "content": f"处理消息时出错: {str(e)}",
+                    "tool_calls": [self._create_default_tool_call(user_message)],
+                    "success": False,
+                    "claude_session_id": None
+                }
 
-    async def _query_claude_agent(self, user_message: str, work_dir: str) -> Dict[str, Any]:
+    async def _query_claude_agent(self, user_message: str, work_dir: str, our_session_id: str = None) -> Dict[str, Any]:
         """使用Claude Agent SDK查询"""
-        if True:
+        try:
             # 导入claude-agent-sdk
             from claude_agent_sdk import query, ClaudeAgentOptions
             from claude_agent_sdk.types import AssistantMessage, TextBlock, ToolUseBlock
-            import anyio
+
+            # 检查是否有保存的Claude会话ID
+            claude_session_id = None
+            if our_session_id:
+                claude_session_id = self.claude_session_ids.get(our_session_id)
+                if not claude_session_id:
+                    # 尝试从文件加载
+                    claude_session_id = load_claude_session_id(our_session_id)
+                    if claude_session_id:
+                        self.claude_session_ids[our_session_id] = claude_session_id
 
             # 创建claude-agent-sdk选项
             options = ClaudeAgentOptions(
-                system_prompt="你在和用户做播客访谈，使用podcast-editor skill",  # 系统提示：使用播客skill
+                system_prompt="你在和用户做播客访谈，使用podcast-editor skill",
                 setting_sources=["user", "project"],
                 allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
-                cwd=work_dir  # 设置cwd=/tmp/{session_id}
+                cwd=work_dir
             )
+
+            # 如果有保存的Claude会话ID，使用resume选项
+            if claude_session_id:
+                options.resume = claude_session_id
+                print(f"🔄 恢复Claude会话: {claude_session_id}")
 
             # 使用claude-agent-sdk处理消息
             response_text = ""
             tool_calls = []
+            captured_claude_session_id = None
 
-            async for message in query(prompt='你用podcast-editor skill帮助用户做自己的播客，用户：'+user_message, options=options):
+            async for message in query(prompt='用户：'+user_message+"你的回复：", options=options):
+                # 捕获系统初始化消息中的会话ID
+                if hasattr(message, 'type') and message.type == 'system' and hasattr(message, 'subtype') and message.subtype == 'init':
+                    if hasattr(message, 'data') and message.data and 'session_id' in message.data:
+                        captured_claude_session_id = message.data['session_id']
+                        print(f"🎯 捕获到Claude会话ID: {captured_claude_session_id}")
+
+                        # 保存Claude会话ID
+                        if our_session_id and captured_claude_session_id:
+                            self.claude_session_ids[our_session_id] = captured_claude_session_id
+                            save_claude_session_id(our_session_id, captured_claude_session_id)
+
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
@@ -185,8 +308,249 @@ class ClaudeAgentSDK:
 
             return {
                 "content": response_text.strip() if response_text else "处理完成",
-                "tool_calls": tool_calls
+                "tool_calls": tool_calls,
+                "claude_session_id": captured_claude_session_id or claude_session_id
             }
+
+        except Exception as e:
+            # 如果SDK调用失败，返回模拟响应
+            mock_response = f"我理解您的需求：{user_message}。我将使用播客-editor skill来帮助您制作播客。[SDK调用失败: {str(e)}]"
+            return {
+                "content": mock_response,
+                "tool_calls": [self._create_default_tool_call(user_message)],
+                "claude_session_id": None
+            }
+
+    async def _stream_claude_agent(self, user_message: str, work_dir: str, our_session_id: str) -> AsyncGenerator[str, None]:
+        """使用Claude Agent SDK进行流式查询"""
+        try:
+            from claude_agent_sdk import query, ClaudeAgentOptions
+            from claude_agent_sdk.types import AssistantMessage, TextBlock, ToolUseBlock
+
+            # 检查是否有保存的Claude会话ID
+            claude_session_id = None
+            if our_session_id:
+                claude_session_id = self.claude_session_ids.get(our_session_id)
+                if not claude_session_id:
+                    # 尝试从文件加载
+                    claude_session_id = load_claude_session_id(our_session_id)
+                    if claude_session_id:
+                        self.claude_session_ids[our_session_id] = claude_session_id
+
+            # 创建claude-agent-sdk选项
+            options = ClaudeAgentOptions(
+                system_prompt="你在和用户做播客访谈，使用podcast-editor skill",
+                setting_sources=["user", "project"],
+                allowed_tools=["Skill", "Read", "Write", "Bash", "Grep", "Glob"],
+                cwd=work_dir
+            )
+
+            # 如果有保存的Claude会话ID，使用resume选项
+            if claude_session_id:
+                options.resume = claude_session_id
+                print(f"🔄 恢复Claude会话 (流式): {claude_session_id}")
+
+            # 生成唯一的聊天ID
+            chat_id = f"chatcmpl-{int(datetime.now().timestamp())}"
+            created = int(datetime.now().timestamp())
+
+            # 发送初始chunk
+            initial_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": "claude-3-sonnet",
+                "choices": [{
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": ""},
+                    "finish_reason": None
+                }],
+                "session_id": our_session_id
+            }
+            yield f"data: {json.dumps(initial_chunk, ensure_ascii=False)}\n\n"
+
+            # 使用claude-agent-sdk处理消息并流式输出
+            response_text = ""
+            tool_calls = []
+            chunk_count = 0
+            captured_claude_session_id = None
+
+            # 模拟流式响应 - 将完整响应分成多个chunk
+            full_response = f"我理解您的需求：{user_message}。我将使用播客-editor skill来帮助您制作播客。"
+
+            # 将响应分成多个chunk来模拟流式输出
+            words = full_response.split()
+            current_chunk = ""
+
+            for i, word in enumerate(words):
+                current_chunk += word + " "
+
+                # 每3个单词发送一个chunk，或者最后一个单词
+                if (i + 1) % 3 == 0 or i == len(words) - 1:
+                    chunk = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": "claude-3-sonnet",
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": current_chunk.strip()},
+                            "finish_reason": None
+                        }],
+                        "session_id": our_session_id
+                    }
+                    yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+
+                    # 添加小延迟来模拟真实的流式响应
+                    await asyncio.sleep(0.1)
+
+                    response_text += current_chunk
+                    current_chunk = ""
+                    chunk_count += 1
+
+            # 尝试使用真实的SDK进行查询（如果可用）
+            try:
+                async for message in query(prompt='你用podcast-editor skill帮助用户做自己的播客，用户：'+user_message, options=options):
+                    print('msg::',message)
+                    # 捕获系统初始化消息中的会话ID
+                    if hasattr(message, 'data') and message.data and 'session_id' in message.data:
+                        captured_claude_session_id = message.data['session_id']
+                        print(f"🎯 捕获到Claude会话ID (流式): {captured_claude_session_id}")
+
+                        # 保存Claude会话ID
+                        if our_session_id and captured_claude_session_id:
+                            self.claude_session_ids[our_session_id] = captured_claude_session_id
+                            save_claude_session_id(our_session_id, captured_claude_session_id)
+
+                    if isinstance(message, ResultMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                # 流式输出文本内容
+                                chunk = {
+                                    "id": chat_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created,
+                                    "model": "claude-3-sonnet",
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"content": block.text},
+                                        "finish_reason": None
+                                    }],
+                                    "session_id": our_session_id
+                                }
+                                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                                response_text += block.text + "\n"
+                                await asyncio.sleep(0.05)  # 小延迟
+                            elif isinstance(block, ToolUseBlock):
+                                tool_calls.append({
+                                    "id": f"tool_{len(tool_calls)}_{int(datetime.now().timestamp())}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": block.name,
+                                        "arguments": json.dumps(block.input) if hasattr(block, 'input') else "{}"
+                                    }
+                                })
+                    if isinstance(message, AssistantMessage):
+                        for block in message.content:
+                            if isinstance(block, TextBlock):
+                                # 流式输出文本内容
+                                chunk = {
+                                    "id": chat_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created,
+                                    "model": "claude-3-sonnet",
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {"content": block.text},
+                                        "finish_reason": None
+                                    }],
+                                    "session_id": our_session_id
+                                }
+                                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                                response_text += block.text + "\n"
+                                await asyncio.sleep(0.05)  # 小延迟
+                            elif isinstance(block, ToolUseBlock):
+                                tool_calls.append({
+                                    "id": f"tool_{len(tool_calls)}_{int(datetime.now().timestamp())}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": block.name,
+                                        "arguments": json.dumps(block.input) if hasattr(block, 'input') else "{}"
+                                    }
+                                })
+            except Exception as sdk_error:
+                # 如果SDK调用失败，添加错误信息到响应
+                error_text = f" [SDK调用失败，使用模拟响应: {str(sdk_error)}]"
+                chunk = {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": "claude-3-sonnet",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": error_text},
+                        "finish_reason": None
+                    }],
+                    "session_id": our_session_id
+                }
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                response_text += error_text
+
+            # 如果没有工具调用，创建默认的skill调用
+            if not tool_calls:
+                tool_calls = [self._create_default_tool_call(user_message)]
+
+            # 发送工具调用信息
+            if tool_calls:
+                tool_chunk = {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": "claude-3-sonnet",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "content": "",
+                            "tool_calls": tool_calls
+                        },
+                        "finish_reason": None
+                    }],
+                    "session_id": our_session_id
+                }
+                yield f"data: {json.dumps(tool_chunk, ensure_ascii=False)}\n\n"
+
+            # 发送完成chunk
+            final_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": "claude-3-sonnet",
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop"
+                }],
+                "session_id": our_session_id
+            }
+            yield f"data: {json.dumps(final_chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            # 错误处理
+            error_chunk = {
+                "id": f"chatcmpl-{int(datetime.now().timestamp())}",
+                "object": "chat.completion.chunk",
+                "created": int(datetime.now().timestamp()),
+                "model": "claude-3-sonnet",
+                "choices": [{
+                    "index": 0,
+                    "delta": {"content": f"流式处理出错: {str(e)}"},
+                    "finish_reason": None
+                }],
+                "session_id": our_session_id
+            }
+            yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
                 
     
@@ -250,9 +614,9 @@ async def create_session():
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"创建会话失败: {str(e)}")
 
-@app.post("/v1/chat/completions", response_model=ChatResponse)
+@app.post("/v1/chat/completions")
 async def chat_completions(request: ChatRequest, session_id: str = Header(..., description="会话ID", alias="session-id")):
-    """聊天完成 - 前端通过header传递session_id"""
+    """聊天完成 - 前端通过header传递session_id，支持流式响应"""
 
     # 1. 验证session_id存在性
     session_path = get_session_path(session_id)
@@ -277,34 +641,78 @@ async def chat_completions(request: ChatRequest, session_id: str = Header(..., d
     if not user_content:
         raise HTTPException(status_code=400, detail="No user message found")
 
-    # 3. 调用process_text_with_skills()使用claude-agent-sdk
-    result = await claude_agent_sdk.process_message(user_content, session_id)
+    # 3. 根据是否流式处理选择不同的响应方式
+    if request.stream:
+        # 流式响应
+        async def generate_stream():
+            try:
+                # 获取流式生成器
+                stream_generator = await claude_agent_sdk.process_message(user_content, session_id, stream=True)
 
-    # 4. 保存消息
-    save_message(session_id, "user", user_content)
-    save_message(session_id, "assistant", result["content"], result.get("tool_calls", []))
+                # 流式输出响应
+                async for chunk in stream_generator:
+                    yield chunk
 
-    # 5. 构建响应
-    return ChatResponse(
-        id=f"chatcmpl-{int(datetime.now().timestamp())}",
-        created=int(datetime.now().timestamp()),
-        model=request.model,
-        choices=[{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": result["content"],
-                "tool_calls": result.get("tool_calls", [])
+                # 保存消息（在流式处理完成后）
+                save_message(session_id, "user", user_content)
+                # 注意：流式模式下，assistant消息会在客户端接收完整内容后保存
+
+            except Exception as e:
+                # 流式错误处理
+                error_chunk = {
+                    "id": f"chatcmpl-{int(datetime.now().timestamp())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(datetime.now().timestamp()),
+                    "model": request.model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": f"流式处理出错: {str(e)}"},
+                        "finish_reason": None
+                    }],
+                    "session_id": session_id
+                }
+                yield f"data: {json.dumps(error_chunk, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/plain",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Content-Type": "text/plain; charset=utf-8"
+            }
+        )
+
+    else:
+        # 非流式响应（原有逻辑）
+        result = await claude_agent_sdk.process_message(user_content, session_id, stream=False)
+
+        # 保存消息
+        save_message(session_id, "user", user_content)
+        save_message(session_id, "assistant", result["content"], result.get("tool_calls", []))
+
+        # 构建响应
+        return ChatResponse(
+            id=f"chatcmpl-{int(datetime.now().timestamp())}",
+            created=int(datetime.now().timestamp()),
+            model=request.model,
+            choices=[{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": result["content"],
+                    "tool_calls": result.get("tool_calls", [])
+                },
+                "finish_reason": "stop"
+            }],
+            usage={
+                "prompt_tokens": len(user_content),
+                "completion_tokens": len(result["content"]),
+                "total_tokens": len(user_content) + len(result["content"])
             },
-            "finish_reason": "stop"
-        }],
-        usage={
-            "prompt_tokens": len(user_content),
-            "completion_tokens": len(result["content"]),
-            "total_tokens": len(user_content) + len(result["content"])
-        },
-        session_id=session_id
-    )
+            session_id=session_id
+        )
 
 
 @app.get("/v1/sessions/{session_id}")
@@ -321,6 +729,58 @@ async def get_session(session_id: str):
         return context
 
     return {"session_id": session_id, "messages": []}
+
+@app.post("/v1/sessions/{session_id}/resume")
+async def resume_session(session_id: str, request: Dict[str, Any]):
+    """恢复会话 - 支持使用Claude会话ID恢复"""
+    try:
+        # 验证会话存在
+        session_path = get_session_path(session_id)
+        if not session_path.exists():
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 获取Claude会话ID（如果提供）
+        claude_session_id = request.get("claude_session_id")
+        if claude_session_id:
+            # 保存Claude会话ID
+            claude_agent_sdk.claude_session_ids[session_id] = claude_session_id
+            save_claude_session_id(session_id, claude_session_id)
+            print(f"🔄 恢复会话: {session_id} 使用Claude会话ID: {claude_session_id}")
+
+        return {
+            "session_id": session_id,
+            "resumed": True,
+            "claude_session_id": claude_session_id,
+            "message": "会话恢复成功"
+        }
+
+    except Exception as e:
+        print(f"❌ 恢复会话错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"恢复会话失败: {str(e)}")
+
+@app.get("/v1/sessions/{session_id}/claude-session")
+async def get_claude_session_id(session_id: str):
+    """获取会话对应的Claude会话ID"""
+    try:
+        # 验证会话存在
+        session_path = get_session_path(session_id)
+        if not session_path.exists():
+            raise HTTPException(status_code=404, detail="Session not found")
+
+
+        claude_session_id = load_claude_session_id(session_id)
+        if claude_session_id:
+            claude_agent_sdk.claude_session_ids[session_id] = claude_session_id
+
+        return {
+            "session_id": session_id,
+            "claude_session_id": claude_session_id,
+            "exists": claude_session_id is not None
+        }
+
+    except Exception as e:
+        print(f"❌ 获取Claude会话ID错误: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取Claude会话ID失败: {str(e)}")
 
 @app.get("/")
 async def root():
