@@ -70,7 +70,7 @@ app.add_middleware(
 class ChatMessage(BaseModel):
     role: str
     content: Union[str, List[Dict[str, Any]]]
-    sequence_id: str
+    sequence_id: str = None
 
 
 class ChatRequest(BaseModel):
