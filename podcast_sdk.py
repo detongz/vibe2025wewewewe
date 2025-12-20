@@ -163,9 +163,6 @@ class ClaudeAgentSDK:
                                             "audio": sequence_id
                                         }
 
-                                        # 确保有audio字段
-                                        if not converted_obj["audio"] and user_clips:
-                                            converted_obj["audio"] = user_clips[0]["clipId"]
 
                                         yield converted_obj
 
@@ -453,7 +450,6 @@ IMPORTANT: 你必须严格按照JSON Lines格式输出播客脚本，不要添�
 
             async for message in query(
                 prompt=load_chat_history(our_session_id)
-                + "用户："
                 + user_message
                 + "你的回复：",
                 options=options,
@@ -613,7 +609,6 @@ IMPORTANT: 你必须严格按照JSON Lines格式输出播客脚本，不要添�
             try:
                 async for message in query(
                     prompt=load_chat_history(our_session_id)
-                    + "用户："
                     + user_message
                     + "你的回复：",
                     options=options,

@@ -187,7 +187,7 @@ async def chat_completions(
     sequence_id = ""
     if request.messages:
         for msg in request.messages:
-            user_content+=f'{msg.role}:{msg.content}\n'
+            user_content += f"{msg.role}:{msg.content}\n"
     if not user_content:
         raise HTTPException(status_code=400, detail="No user message found")
 
