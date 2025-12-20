@@ -126,7 +126,7 @@ def load_chat_history(our_session_id: str) -> Optional[str]:
             with open(context_file, "r", encoding="utf-8") as f:
                 context = json.load(f)
                 if 'username' in context:
-                    context_msgs.append(f'user:叫我【{context.get("username")}】。')
+                    context_msgs.append(f'user:叫我[{context.get("username")}]。')
 
                 for msg in context.get("messages", []):
                     context_msgs.append(f"{msg.get('role')}: {msg.get('content')}")
