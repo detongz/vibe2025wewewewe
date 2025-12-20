@@ -186,19 +186,8 @@ async def chat_completions(
     user_content = ""
     sequence_id = ""
     if request.messages:
-        last_msg = request.messages[-1]
-        content = last_msg.content
-        sequence_id = last_msg.sequence_id
-
-        if isinstance(content, str):
-            user_content = content
-        elif isinstance(content, list):
-            # 处理复杂的content结构
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    user_content = item.get("text", "")
-                    break
-
+        for msg in request.messages:
+            user_content+=f'{msg.role}:{msg.content}\n'
     if not user_content:
         raise HTTPException(status_code=400, detail="No user message found")
 
