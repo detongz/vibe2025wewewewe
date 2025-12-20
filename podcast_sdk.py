@@ -68,53 +68,111 @@ class ClaudeAgentSDK:
             {}
         )  # 存储Claude会话ID映射：our_session_id -> claude_session_id
 
-    def _process_json_line(self, line: str, content_to_clip_map: dict, user_clips: list) -> Optional[dict]:
+    def _extract_json_objects(self, text: str, content_to_clip_map: dict, user_clips: list):
         """
-        处理单行JSON，进行数据清洗和校验
+        从文本中提取完整的JSON对象，支持跨行JSON
 
         Args:
-            line: JSON字符串
+            text: 包含JSON的文本
             content_to_clip_map: 内容到clip的映射
             user_clips: 用户clip列表
 
-        Returns:
-            处理后的数据对象，如果解析失败返回None
+        Yields:
+            处理后的数据对象或非JSON文本
         """
-        try:
-            data_obj = json.loads(line)
+        i = 0
+        n = len(text)
 
-            # 数据清洗和校验
-            if data_obj.get("type") == "user":
-                user_text = data_obj.get("text", "")
+        while i < n:
+            # 跳过非JSON内容
+            while i < n and text[i] != '{':
+                # 收集非JSON文本直到换行或JSON开始
+                start = i
+                while i < n and text[i] != '{' and text[i] != '\n':
+                    i += 1
 
-                # 确保用户片段有audio字段
-                if "audio" not in data_obj:
-                    # 优先精确匹配
-                    if user_text in content_to_clip_map:
-                        data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
-                    else:
-                        # 尝试模糊匹配（去除空格和换行）
-                        user_text_clean = user_text.replace(" ", "").replace("\n", "")
-                        for clip_content, clip_info in content_to_clip_map.items():
-                            clip_content_clean = clip_content.replace(" ", "").replace("\n", "")
-                            if user_text_clean == clip_content_clean:
-                                data_obj["audio"] = clip_info["clipId"]
-                                # 使用原始clip内容确保一致性
-                                data_obj["text"] = clip_content
+                if start < i:
+                    non_json_text = text[start:i].strip()
+                    if non_json_text:
+                        yield {"type": "ai", "text": non_json_text}
+
+                if i < n and text[i] == '\n':
+                    i += 1
+
+            if i >= n:
+                break
+
+            # 提取JSON对象
+            if text[i] == '{':
+                brace_count = 0
+                json_start = i
+                in_string = False
+                escape_next = False
+
+                while i < n:
+                    char = text[i]
+
+                    if escape_next:
+                        escape_next = False
+                    elif char == '\\':
+                        escape_next = True
+                    elif char == '"':
+                        in_string = not in_string
+                    elif not in_string:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                # 找到完整JSON对象
+                                i += 1
+                                json_str = text[json_start:i]
+
+                                # 处理JSON对象
+                                try:
+                                    data_obj = json.loads(json_str)
+
+                                    # 数据清洗和校验
+                                    if data_obj.get("type") == "user":
+                                        user_text = data_obj.get("text", "")
+
+                                        # 确保用户片段有audio字段
+                                        if "audio" not in data_obj:
+                                            # 优先精确匹配
+                                            if user_text in content_to_clip_map:
+                                                data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
+                                            else:
+                                                # 尝试模糊匹配（去除空格和换行）
+                                                user_text_clean = user_text.replace(" ", "").replace("\n", "")
+                                                for clip_content, clip_info in content_to_clip_map.items():
+                                                    clip_content_clean = clip_content.replace(" ", "").replace("\n", "")
+                                                    if user_text_clean == clip_content_clean:
+                                                        data_obj["audio"] = clip_info["clipId"]
+                                                        # 使用原始clip内容确保一致性
+                                                        data_obj["text"] = clip_content
+                                                        break
+                                                else:
+                                                    # 如果找不到匹配，使用第一个可用的clipId
+                                                    if user_clips:
+                                                        data_obj["audio"] = user_clips[0]["clipId"]
+
+                                        # 最终验证：确保audio字段存在
+                                        if "audio" not in data_obj and user_clips:
+                                            data_obj["audio"] = user_clips[0]["clipId"]
+
+                                    yield data_obj
+
+                                except json.JSONDecodeError:
+                                    # JSON解析失败，作为普通文本处理
+                                    yield {"type": "ai", "text": json_str}
+
                                 break
-                        else:
-                            # 如果找不到匹配，使用第一个可用的clipId
-                            if user_clips:
-                                data_obj["audio"] = user_clips[0]["clipId"]
 
-                # 最终验证：确保audio字段存在
-                if "audio" not in data_obj and user_clips:
-                    data_obj["audio"] = user_clips[0]["clipId"]
+                    i += 1
 
-            return data_obj
-
-        except json.JSONDecodeError:
-            return None
+                # 如果没找到闭合的}，可能是JSON不完整，停止处理
+                if brace_count > 0:
+                    break
 
     def _should_skip_line(self, line: str) -> bool:
         """判断是否应该跳过该行"""
@@ -170,9 +228,18 @@ class ClaudeAgentSDK:
 用户原声素材列表：
 {{USER_CLIPS_JSON}}
 
-请严格按照JSON Lines格式输出播客脚本：
-{"type": "ai", "text": "AI旁白"}
-{"type": "user", "text": "用户原声完整内容", "audio": "clipId"}
+IMPORTANT: 你必须严格按照JSON Lines格式输出播客脚本，不要添加任何解释性文字！
+每行必须是一个完整的JSON对象，格式如下：
+
+{"type": "ai", "text": "AI旁白内容"}
+{"type": "user", "text": "用户原声完整内容", "audio": "对应的clipId"}
+
+规则：
+1. 不要输出任何markdown标记（如```json）
+2. 不要输出任何解释性文字
+3. 直接从第一个JSON对象开始输出
+4. 每行一个完整的JSON对象
+5. 确保所有user类型的条目都包含正确的audio字段
 """
 
             # 替换提示词中的素材占位符
@@ -204,26 +271,16 @@ class ClaudeAgentSDK:
                 nonlocal buffer
                 buffer += content
 
-                # 按行分割处理
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    line = line.strip()
+                # 使用健壮的JSON对象提取
+                for data_obj in self._extract_json_objects(buffer, content_to_clip_map, user_clips):
+                    yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
 
-                    if self._should_skip_line(line):
-                        continue
-
-                    # 尝试解析JSON
-                    data_obj = self._process_json_line(line, content_to_clip_map, user_clips)
-                    if data_obj:
-                        yield f"data: {json.dumps(data_obj, ensure_ascii=False)}\n\n"
-                    else:
-                        # JSON解析失败，可能是行不完整，放回缓冲区
-                        buffer = line + "\n" + buffer
-                        break
+                # 处理完后清空缓冲区
+                buffer = ""
 
             # 流式处理LLM响应
             async for message in query(
-                prompt="请根据素材列表生成播客脚本，严格按照JSON Lines格式输出，每行一个完整的JSON对象。",
+                prompt="现在开始生成播客脚本。严格按照JSON Lines格式输出，每行一个JSON对象，不要任何解释文字。",
                 options=options,
             ):
                 print('msg:',message)
