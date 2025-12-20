@@ -132,35 +132,59 @@ class ClaudeAgentSDK:
                                 try:
                                     data_obj = json.loads(json_str)
 
-                                    # 数据清洗和校验
-                                    if data_obj.get("type") == "user":
-                                        user_text = data_obj.get("text", "")
+                                    # 字段映射和转换
+                                    if data_obj.get("role") == "ai":
+                                        # AI角色：转换为前端期望格式
+                                        converted_obj = {
+                                            "type": "ai",
+                                            "text": data_obj.get("content", "")
+                                        }
+                                        yield converted_obj
 
-                                        # 确保用户片段有audio字段
-                                        if "audio" not in data_obj:
-                                            # 优先精确匹配
-                                            if user_text in content_to_clip_map:
-                                                data_obj["audio"] = content_to_clip_map[user_text]["clipId"]
-                                            else:
-                                                # 尝试模糊匹配（去除空格和换行）
-                                                user_text_clean = user_text.replace(" ", "").replace("\n", "")
-                                                for clip_content, clip_info in content_to_clip_map.items():
-                                                    clip_content_clean = clip_content.replace(" ", "").replace("\n", "")
-                                                    if user_text_clean == clip_content_clean:
-                                                        data_obj["audio"] = clip_info["clipId"]
-                                                        # 使用原始clip内容确保一致性
-                                                        data_obj["text"] = clip_content
-                                                        break
-                                                else:
-                                                    # 如果找不到匹配，使用第一个可用的clipId
-                                                    if user_clips:
-                                                        data_obj["audio"] = user_clips[0]["clipId"]
+                                    elif data_obj.get("role") == "user":
+                                        # 用户角色：需要匹配音频片段
+                                        sequence_id = data_obj.get("sequence_id", "")
+                                        user_text = ""
 
-                                        # 最终验证：确保audio字段存在
-                                        if "audio" not in data_obj and user_clips:
-                                            data_obj["audio"] = user_clips[0]["clipId"]
+                                        # 尝试根据sequence_id查找对应的内容
+                                        if sequence_id:
+                                            for clip_info in content_to_clip_map.values():
+                                                if clip_info.get("clipId") == sequence_id or clip_info.get("id") == sequence_id:
+                                                    user_text = clip_info.get("content", "")
+                                                    break
 
-                                    yield data_obj
+                                        # 如果没找到内容，尝试用content字段
+                                        if not user_text:
+                                            user_text = data_obj.get("content", "")
+
+                                        converted_obj = {
+                                            "type": "user",
+                                            "text": user_text,
+                                            "audio": sequence_id
+                                        }
+
+                                        # 确保有audio字段
+                                        if not converted_obj["audio"] and user_clips:
+                                            converted_obj["audio"] = user_clips[0]["clipId"]
+
+                                        yield converted_obj
+
+                                    elif "podcast_ep_desc" in data_obj:
+                                        # 播客描述信息，直接传递
+                                        yield data_obj
+                                    else:
+                                        # 其他格式的JSON，尝试通用转换
+                                        if "content" in data_obj and "role" in data_obj:
+                                            converted_obj = {
+                                                "type": data_obj.get("role", "unknown"),
+                                                "text": data_obj.get("content", "")
+                                            }
+                                            if "sequence_id" in data_obj:
+                                                converted_obj["audio"] = data_obj["sequence_id"]
+                                            yield converted_obj
+                                        else:
+                                            # 无法识别的格式，作为AI文本处理
+                                            yield {"type": "ai", "text": json_str}
 
                                 except json.JSONDecodeError:
                                     # JSON解析失败，作为普通文本处理
@@ -231,15 +255,17 @@ class ClaudeAgentSDK:
 IMPORTANT: 你必须严格按照JSON Lines格式输出播客脚本，不要添加任何解释性文字！
 每行必须是一个完整的JSON对象，格式如下：
 
-{"type": "ai", "text": "AI旁白内容"}
-{"type": "user", "text": "用户原声完整内容", "audio": "对应的clipId"}
+{"role": "ai", "content": "AI旁白内容"}
+{"role": "user", "sequence_id": "对应的clipId"}
+{"podcast_ep_desc": {"id": "episode-1", "title": "播客标题", "summary": "播客摘要"}}
 
 规则：
 1. 不要输出任何markdown标记（如```json）
 2. 不要输出任何解释性文字
 3. 直接从第一个JSON对象开始输出
 4. 每行一个完整的JSON对象
-5. 确保所有user类型的条目都包含正确的audio字段
+5. AI角色使用role: "ai"，用户角色使用role: "user"和sequence_id
+6. 可以在最后添加podcast_ep_desc描述信息
 """
 
             # 替换提示词中的素材占位符
