@@ -187,14 +187,14 @@ async def chat_completions(
     sequence_id = ""
     if request.messages:
         for msg in request.messages:
-            user_content += f"{msg.role}:{msg.content}\n"
+            user_content += f"{'娓娓播客编导' if msg.role=="assistant" else msg.role}:{msg.content}\n"
     if not user_content:
         raise HTTPException(status_code=400, detail="No user message found")
 
     # 判断是不是要引导用户结束对话
     context = load_chat_history(session_id).split("<confirm_generate>")
     if context and len(context) > 10:
-        user_content += f"<notice>用户已经被AI认为{len(context)}次可以结束对话，请用<confirm_generate>是否现在生成故事？</confirm_generate>引导用户结束对话开始生成播客</notice>\n"
+        user_content += f"<notice>用户已经被AI认为{len(context)}次可以结束对话，请用<confirm_generate>是否现在生成故事？</confirm_generate>请编导引导用户结束对话开始生成播客</notice>\n"
 
     # 不判断是不是要进入后端处理生成，内容生成走另一个接口
 
